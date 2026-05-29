@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/ai_chat?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
+    username: root
+    password: ${MYSQL_PASSWORD:062017}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:sk-61007e72a25844aaa7904178806ea899}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: assign_id
