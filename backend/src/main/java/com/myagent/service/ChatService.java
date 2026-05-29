@@ -27,7 +27,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -35,24 +34,6 @@ import java.util.stream.Collectors;
 @Service
 public class ChatService {
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
-
-    private static final Set<String> TOOL_KEYWORDS = Set.of(
-        // 时间相关
-        "时间", "几点", "几号", "日期", "今天", "明天", "昨天", "现在",
-        // 天气相关
-        "天气", "温度", "气温", "下雨", "下雪",
-        // 文件系统相关
-        "文件", "目录", "文件夹", "读取", "写入", "搜索", "查找", "列出",
-        // English
-        "time", "date", "weather", "temperature",
-        "file", "directory", "folder", "search", "read", "write"
-    );
-
-    private boolean needsTools(String message) {
-        if (message == null || message.isBlank()) return false;
-        String lower = message.toLowerCase();
-        return TOOL_KEYWORDS.stream().anyMatch(lower::contains);
-    }
 
     @Autowired(required = false)
     private SyncMcpToolCallbackProvider mcpToolCallbackProvider;
@@ -167,10 +148,8 @@ public class ChatService {
 
         List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages());
         var spec = selectClient(model).prompt().messages(history);
-        if (needsTools(userMessage)) {
-            spec.tools(toolFunctions);
-            spec.toolCallbacks(getFileSystemTools());
-        }
+        spec.tools(toolFunctions);
+        spec.toolCallbacks(getFileSystemTools());
         String replyContent = spec.call().content();
 
         return insertMessage(conv.getId(), "assistant", replyContent);
@@ -197,10 +176,8 @@ public class ChatService {
         var spec = selectClient(model).prompt()
                 .system(buildSystemPrompt(conv.getId()))
                 .messages(history);
-        if (needsTools(userMessage)) {
-            spec.tools(toolFunctions);
-            spec.toolCallbacks(getFileSystemTools());
-        }
+        spec.tools(toolFunctions);
+        spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
             spec.toolCallbacks(getWebSearchToolCallbacks());
         }
@@ -268,10 +245,8 @@ public class ChatService {
         var spec = selectClient(model).prompt()
                 .system(buildSystemPrompt(conv.getId()))
                 .messages(history);
-        if (needsTools(userMessage)) {
-            spec.tools(toolFunctions);
-            spec.toolCallbacks(getFileSystemTools());
-        }
+        spec.tools(toolFunctions);
+        spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
             spec.toolCallbacks(getWebSearchToolCallbacks());
         }
@@ -289,10 +264,8 @@ public class ChatService {
         var spec = selectClient(model).prompt()
                 .system(buildSystemPrompt(conv.getId()))
                 .messages(history);
-        if (needsTools(userMessage)) {
-            spec.tools(toolFunctions);
-            spec.toolCallbacks(getFileSystemTools());
-        }
+        spec.tools(toolFunctions);
+        spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
             spec.toolCallbacks(getWebSearchToolCallbacks());
         }
