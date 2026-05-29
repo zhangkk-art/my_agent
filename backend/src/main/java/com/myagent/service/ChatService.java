@@ -168,8 +168,8 @@ public class ChatService {
 
     /**
      * Build conversation history. For real-time queries (time/weather),
-     * replaces stale time/weather data in assistant messages to prevent
-     * the model from reusing outdated values from prior turns.
+     * completely replaces assistant messages that contain stale time/weather
+     * data — the original content is removed so the model cannot see it.
      */
     public List<org.springframework.ai.chat.messages.Message> buildHistory(
             List<Message> messages, String currentUserMessage) {
@@ -181,9 +181,11 @@ public class ChatService {
                     } else {
                         String content = m.getContent();
                         if (requiredTool != null && containsRealTimeData(content, requiredTool)) {
-                            content = "[系统提示：此消息包含的时间/天气数据已过时，"
-                                    + "必须调用 " + requiredTool + " 工具获取当前真实数据。"
-                                    + "原消息内容：" + content + "]";
+                            // Completely replace — do NOT include original content
+                            content = "[此消息已被系统清除，因为包含过时的时间/天气数据。"
+                                    + "你必须调用 " + requiredTool + " 工具重新查询。"
+                                    + "不要使用或猜测任何历史中的时间/天气值。]";
+                            log.info("Redacted stale {} data from history", requiredTool);
                         }
                         return new AssistantMessage(content);
                     }
@@ -193,18 +195,20 @@ public class ChatService {
 
     private boolean containsRealTimeData(String content, String requiredTool) {
         if (content == null) return false;
-        // Check for time patterns: HH:MM:SS, YYYY-MM-DD, etc.
         if (requiredTool.contains("CurrentTime") || requiredTool.contains("getCurrentTime")) {
-            if (content.matches(".*\\d{1,2}:\\d{2}(:\\d{2})?.*")) return true;
-            if (content.matches(".*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}.*")) return true;
-            if (content.contains("CST") || content.contains("UTC") || content.contains("GMT")) return true;
-            if (content.contains("北京时间") || content.contains("时间")) return true;
+            // Match explicit time formats
+            if (content.matches(".*\\d{1,2}[:：]\\d{2}([:：]\\d{2})?.*")) return true;
+            if (content.matches(".*\\d{4}[-/年]\\d{1,2}[-/月]\\d{1,2}.*")) return true;
+            if (content.matches(".*\\d{1,2}月\\d{1,2}[日号].*")) return true;
+            if (content.contains("CST") || content.contains("UTC") || content.contains("GMT")
+                    || content.contains("时区") || content.contains("标准时间")) return true;
+            if (content.matches(".*[上中下]午\\d{1,2}[点时].*")) return true;
+            if (content.matches(".*星期[一二三四五六日天].*")) return true;
         }
-        // Check for weather patterns: °C, temperature, weather keywords
         if (requiredTool.contains("Weather") || requiredTool.contains("getWeather")) {
-            if (content.matches(".*\\d+\\s*°[CF].*")) return true;
-            if (content.contains("天气") || content.contains("温度") || content.contains("气温")) return true;
-            if (content.contains("°C") || content.contains("°F")) return true;
+            if (content.matches(".*\\d+\\s*[°度].*")) return true;
+            if (content.contains("天气") || content.contains("温度") || content.contains("气温")
+                    || content.contains("湿度") || content.contains("风速") || content.contains("风向")) return true;
         }
         return false;
     }
