@@ -166,16 +166,47 @@ public class ChatService {
         return message;
     }
 
-    public List<org.springframework.ai.chat.messages.Message> buildHistory(List<Message> messages) {
+    /**
+     * Build conversation history. For real-time queries (time/weather),
+     * replaces stale time/weather data in assistant messages to prevent
+     * the model from reusing outdated values from prior turns.
+     */
+    public List<org.springframework.ai.chat.messages.Message> buildHistory(
+            List<Message> messages, String currentUserMessage) {
+        String requiredTool = detectRequiredTool(currentUserMessage);
         return messages.stream()
                 .map(m -> {
                     if ("user".equals(m.getRole())) {
                         return new UserMessage(m.getContent());
                     } else {
-                        return new AssistantMessage(m.getContent());
+                        String content = m.getContent();
+                        if (requiredTool != null && containsRealTimeData(content, requiredTool)) {
+                            content = "[系统提示：此消息包含的时间/天气数据已过时，"
+                                    + "必须调用 " + requiredTool + " 工具获取当前真实数据。"
+                                    + "原消息内容：" + content + "]";
+                        }
+                        return new AssistantMessage(content);
                     }
                 })
                 .collect(Collectors.toList());
+    }
+
+    private boolean containsRealTimeData(String content, String requiredTool) {
+        if (content == null) return false;
+        // Check for time patterns: HH:MM:SS, YYYY-MM-DD, etc.
+        if (requiredTool.contains("CurrentTime") || requiredTool.contains("getCurrentTime")) {
+            if (content.matches(".*\\d{1,2}:\\d{2}(:\\d{2})?.*")) return true;
+            if (content.matches(".*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}.*")) return true;
+            if (content.contains("CST") || content.contains("UTC") || content.contains("GMT")) return true;
+            if (content.contains("北京时间") || content.contains("时间")) return true;
+        }
+        // Check for weather patterns: °C, temperature, weather keywords
+        if (requiredTool.contains("Weather") || requiredTool.contains("getWeather")) {
+            if (content.matches(".*\\d+\\s*°[CF].*")) return true;
+            if (content.contains("天气") || content.contains("温度") || content.contains("气温")) return true;
+            if (content.contains("°C") || content.contains("°F")) return true;
+        }
+        return false;
     }
 
     /**
@@ -187,7 +218,7 @@ public class ChatService {
         insertMessage(conv.getId(), "user", userMessage);
         conv = conversationService.getConversation(conv.getId());
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages());
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
         var spec = selectClient(model).prompt()
                 .system(buildDynamicSystemPrompt(conv.getId(), userMessage))
                 .messages(history);
@@ -212,7 +243,7 @@ public class ChatService {
     public StreamContext chatStream(String conversationId, String userMessage, String model, boolean webSearch) {
         Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages());
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
         if (!history.isEmpty() && history.get(history.size() - 1) instanceof UserMessage) {
             history.set(history.size() - 1, new UserMessage(userMessage));
         }
@@ -264,7 +295,7 @@ public class ChatService {
     public StreamContext chatImageStream(String conversationId, String userMessage, String model, List<String> images, boolean webSearch) {
         Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages());
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
         List<Media> mediaList = new ArrayList<>();
         for (String img : images) {
             if (img.startsWith("data:image/")) {
@@ -300,7 +331,7 @@ public class ChatService {
     public StreamContext regenerateStream(String conversationId, String userMessage, String model, boolean webSearch) {
         Conversation conv = conversationService.prepareForRegenerate(conversationId, userMessage);
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages());
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
         if (!history.isEmpty() && history.get(history.size() - 1) instanceof UserMessage) {
             history.set(history.size() - 1, new UserMessage(userMessage));
         }
