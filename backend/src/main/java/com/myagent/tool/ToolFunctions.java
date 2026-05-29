@@ -21,7 +21,7 @@ public class ToolFunctions {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newBuilder().build();
 
-    @Tool(description = "Get the current date and time. Use this when the user asks about the current time, today's date, or what time it is now.")
+    @Tool(description = "Get the current real date and time. MUST be called EVERY time the user asks about time/date/today/now — never reuse time values from conversation history, as they become stale immediately.")
     public TimeResponse getCurrentTime(TimeRequest request) {
         ZoneId zone = ZoneId.of("Asia/Shanghai");
         try {
@@ -33,7 +33,7 @@ public class ToolFunctions {
         return new TimeResponse(now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
     }
 
-    @Tool(description = "Get the current weather for a specified city. Use this when the user asks about weather, temperature, or climate conditions of a place.")
+    @Tool(description = "Get the current real weather for a specified city. MUST be called EVERY time the user asks about weather/temperature — never reuse weather data from conversation history, as weather changes constantly.")
     public WeatherResponse getWeather(WeatherRequest request) {
         try {
             String city = request.city() != null ? request.city() : "Beijing";
