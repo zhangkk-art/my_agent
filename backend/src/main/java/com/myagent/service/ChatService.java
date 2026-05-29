@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.myagent.tool.ToolFunctions;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -82,6 +84,53 @@ public class ChatService {
             return name != null && (name.startsWith("brave") || name.contains("web_search"));
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * Detect if the user message is a real-time query that MUST call a specific tool.
+     * Returns the tool name to force via tool_choice, or null to let the model decide.
+     * This bypasses the model's tendency to reuse stale data from conversation history.
+     */
+    private String detectRequiredTool(String userMessage) {
+        if (userMessage == null || userMessage.isBlank()) return null;
+        String msg = userMessage;
+        // Time-related queries → must call getCurrentTime
+        if (containsAny(msg, "几点", "几号", "日期", "星期几", "今天周几", "今天星期",
+                "当前时间", "现在时间", "现在几点", "今天几", "今天日期",
+                "what time", "what day", "current time", "today's date")) {
+            return "getCurrentTime";
+        }
+        // Weather-related queries → must call getWeather
+        if (containsAny(msg, "天气", "气温", "下雨", "下雪")) {
+            return "getWeather";
+        }
+        return null;
+    }
+
+    private boolean containsAny(String msg, String... keywords) {
+        String lower = msg.toLowerCase();
+        for (String kw : keywords) {
+            if (lower.contains(kw.toLowerCase())) return true;
+        }
+        return false;
+    }
+
+    /**
+     * If a specific tool is required, set tool_choice to force the model to call it.
+     * This works at the API level, so conversation history cannot override it.
+     */
+    private void applyToolChoiceIfNeeded(Object spec, String userMessage) {
+        String requiredTool = detectRequiredTool(userMessage);
+        if (requiredTool != null) {
+            Map<String, Object> toolChoice = Map.of(
+                    "type", "function",
+                    "function", Map.of("name", requiredTool));
+            if (spec instanceof ChatClient.ChatClientRequestSpec chatSpec) {
+                chatSpec.options(OpenAiChatOptions.builder()
+                        .toolChoice(toolChoice)
+                        .build());
+            }
         }
     }
 
@@ -150,6 +199,7 @@ public class ChatService {
         var spec = selectClient(model).prompt().messages(history);
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
+        applyToolChoiceIfNeeded(spec, userMessage);
         String replyContent = spec.call().content();
 
         return insertMessage(conv.getId(), "assistant", replyContent);
@@ -178,6 +228,7 @@ public class ChatService {
                 .messages(history);
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
+        applyToolChoiceIfNeeded(spec, userMessage);
         if (webSearch) {
             spec.toolCallbacks(getWebSearchToolCallbacks());
         }
@@ -247,6 +298,7 @@ public class ChatService {
                 .messages(history);
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
+        applyToolChoiceIfNeeded(spec, userMessage);
         if (webSearch) {
             spec.toolCallbacks(getWebSearchToolCallbacks());
         }
@@ -266,6 +318,7 @@ public class ChatService {
                 .messages(history);
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
+        applyToolChoiceIfNeeded(spec, userMessage);
         if (webSearch) {
             spec.toolCallbacks(getWebSearchToolCallbacks());
         }
