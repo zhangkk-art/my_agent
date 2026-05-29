@@ -14,6 +14,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.myagent.tool.ToolFunctions;
+import com.myagent.tool.WebSearchTools;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +26,6 @@ import reactor.core.publisher.Flux;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -40,6 +40,9 @@ public class ChatService {
 
     @Autowired
     private ToolFunctions toolFunctions;
+
+    @Autowired
+    private WebSearchTools webSearchTools;
 
     private final ChatClientRegistry clientRegistry;
     private final ConversationService conversationService;
@@ -65,24 +68,7 @@ public class ChatService {
     }
 
     private ToolCallback[] getFileSystemTools() {
-        return Arrays.stream(getMcpTools())
-                .filter(t -> !isWebSearchTool(t))
-                .toArray(ToolCallback[]::new);
-    }
-
-    private ToolCallback[] getWebSearchToolCallbacks() {
-        return Arrays.stream(getMcpTools())
-                .filter(this::isWebSearchTool)
-                .toArray(ToolCallback[]::new);
-    }
-
-    private boolean isWebSearchTool(ToolCallback t) {
-        try {
-            String name = t.getToolDefinition().name();
-            return name != null && (name.startsWith("brave") || name.contains("web_search"));
-        } catch (Exception e) {
-            return false;
-        }
+        return getMcpTools();  // all MCP tools are filesystem tools now (web search is handled by WebSearchTools)
     }
 
     /**
@@ -94,11 +80,8 @@ public class ChatService {
         String base = buildSystemPrompt(conversationId);
         String requiredTool = detectRequiredTool(userMessage);
         if (requiredTool != null) {
-            base += "\n\n【最高优先级指令 — 立即执行】\n"
-                  + "对话历史中可能包含过时的时间或天气数据，这些数据现在是错误的。\n"
-                  + "你必须立即调用 " + requiredTool + " 工具获取当前真实数据，\n"
-                  + "绝对禁止使用对话历史中的任何时间/天气信息来回答。\n"
-                  + "THIS OVERRIDE TAKES PRIORITY OVER CONVERSATION HISTORY.";
+            base += "\n\n【系统指令】用户正在询问实时信息。请立即调用 "
+                  + requiredTool + " 工具。不要使用历史记录中的数据。";
             log.info("Real-time query detected — injecting tool-force prompt for: {}", requiredTool);
         }
         return base;
@@ -108,11 +91,13 @@ public class ChatService {
         if (userMessage == null || userMessage.isBlank()) return null;
         String msg = userMessage;
         if (containsAny(msg, "几点", "几号", "日期", "星期几", "今天周几", "今天星期",
+                "什么时候", "啥时候", "今天是什么日子",
+                "明天周几", "明天星期", "明天几号", "明天日期",
                 "当前时间", "现在时间", "现在几点", "今天几", "今天日期",
                 "what time", "what day", "current time", "today's date")) {
             return "getCurrentTime";
         }
-        if (containsAny(msg, "天气", "气温", "下雨", "下雪")) {
+        if (containsAny(msg, "天气", "气温", "温度", "下雨", "下雪")) {
             return "getWeather";
         }
         return null;
@@ -182,9 +167,7 @@ public class ChatService {
                         String content = m.getContent();
                         if (requiredTool != null && containsRealTimeData(content, requiredTool)) {
                             // Completely replace — do NOT include original content
-                            content = "[此消息已被系统清除，因为包含过时的时间/天气数据。"
-                                    + "你必须调用 " + requiredTool + " 工具重新查询。"
-                                    + "不要使用或猜测任何历史中的时间/天气值。]";
+                            content = "[过时数据已清除]";
                             log.info("Redacted stale {} data from history", requiredTool);
                         }
                         return new AssistantMessage(content);
@@ -257,7 +240,7 @@ public class ChatService {
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
-            spec.toolCallbacks(getWebSearchToolCallbacks());
+            spec.tools(webSearchTools);
         }
         Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
         return new StreamContext(conv.getId(), content);
@@ -326,7 +309,7 @@ public class ChatService {
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
-            spec.toolCallbacks(getWebSearchToolCallbacks());
+            spec.tools(webSearchTools);
         }
         Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
         return new StreamContext(conv.getId(), content);
@@ -345,7 +328,7 @@ public class ChatService {
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
-            spec.toolCallbacks(getWebSearchToolCallbacks());
+            spec.tools(webSearchTools);
         }
         Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
         return new StreamContext(conv.getId(), content);
