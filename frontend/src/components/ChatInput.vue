@@ -1,6 +1,30 @@
 <template>
   <div class="chat-input-container">
+    <div v-if="images.length > 0" class="image-preview-bar">
+      <div v-for="(img, i) in images" :key="i" class="preview-thumb">
+        <img :src="img" alt="Preview" />
+        <button class="btn-remove-img" @click="removeImage(i)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </div>
     <div class="chat-input-wrapper">
+      <input
+        ref="fileInput"
+        type="file"
+        accept="image/*"
+        class="file-input-hidden"
+        @change="onFileChange"
+      />
+      <button class="btn-upload" @click="triggerUpload" title="Upload image">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </button>
       <textarea
         ref="inputRef"
         v-model="text"
@@ -10,7 +34,35 @@
         rows="1"
         @keydown="handleKeydown"
         @input="autoResize"
+        @paste="onPaste"
       ></textarea>
+      <!-- Voice input -->
+      <button
+        class="btn-voice"
+        :class="{ recording: isRecording }"
+        title="语音输入"
+        @click="toggleVoice"
+        type="button"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/>
+        </svg>
+      </button>
+      <!-- Web search toggle -->
+      <button
+        class="btn-web-search"
+        :class="{ active: webSearch }"
+        title="联网搜索"
+        @click="webSearch = !webSearch"
+        type="button"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+        </svg>
+      </button>
       <button
         v-if="loading"
         class="btn-stop"
@@ -24,7 +76,7 @@
       <button
         v-else
         class="btn-send"
-        :disabled="!text.trim() || disabled"
+        :disabled="(!text.trim() && images.length === 0) || disabled"
         @click="send"
         title="Send"
       >
@@ -49,6 +101,11 @@ const emit = defineEmits(['send', 'stop'])
 
 const text = ref('')
 const inputRef = ref(null)
+const fileInput = ref(null)
+const images = ref([])
+const isRecording = ref(false)
+const webSearch = ref(false)
+let recognition = null
 
 function autoResize() {
   nextTick(() => {
@@ -67,16 +124,83 @@ function handleKeydown(e) {
   }
 }
 
+function triggerUpload() {
+  fileInput.value?.click()
+}
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024 // 5MB
+
+function addImageFile(file) {
+  if (!file.type.startsWith('image/')) {
+    alert('请选择图片文件')
+    return
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    alert(`图片大小不能超过 5MB（当前: ${(file.size / 1024 / 1024).toFixed(1)}MB）`)
+    return
+  }
+  if (images.value.length >= 4) {
+    alert('最多只能上传 4 张图片')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => { images.value.push(reader.result) }
+  reader.onerror = () => { alert('读取文件失败，请重试') }
+  reader.readAsDataURL(file)
+}
+
+function onFileChange(e) {
+  const file = e.target.files[0]
+  if (file) addImageFile(file)
+  fileInput.value.value = ''
+}
+
+function onPaste(e) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      e.preventDefault()
+      addImageFile(item.getAsFile())
+      break
+    }
+  }
+}
+
+function removeImage(i) {
+  images.value.splice(i, 1)
+}
+
+function toggleVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (!SR) { alert('当前浏览器不支持语音输入（推荐使用 Chrome）'); return }
+  if (isRecording.value) {
+    recognition?.stop()
+    return
+  }
+  recognition = new SR()
+  recognition.lang = 'zh-CN'
+  recognition.continuous = false
+  recognition.interimResults = false
+  recognition.onresult = (e) => {
+    text.value += e.results[0][0].transcript
+    autoResize()
+  }
+  recognition.onend = () => { isRecording.value = false }
+  recognition.onerror = () => { isRecording.value = false }
+  recognition.start()
+  isRecording.value = true
+}
+
 function send() {
   const msg = text.value.trim()
-  if (!msg || props.disabled) return
-  emit('send', msg)
+  if ((!msg && images.value.length === 0) || props.disabled) return
+  emit('send', msg, [...images.value], webSearch.value)
   text.value = ''
+  images.value = []
   nextTick(() => {
     const el = inputRef.value
-    if (el) {
-      el.style.height = 'auto'
-    }
+    if (el) el.style.height = 'auto'
   })
 }
 
@@ -86,6 +210,77 @@ defineExpose({ focus: () => inputRef.value?.focus() })
 <style scoped>
 .chat-input-container {
   padding: 16px 24px 24px;
+}
+
+/* Image preview bar */
+.image-preview-bar {
+  max-width: 800px;
+  margin: 0 auto 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preview-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.preview-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.btn-remove-img {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  color: white;
+  padding: 0;
+}
+.btn-remove-img:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* File input hidden */
+.file-input-hidden {
+  display: none;
+}
+
+/* Upload button */
+.btn-upload {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+.btn-upload:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .chat-input-container {
+    padding: 12px 12px 16px;
+  }
 }
 
 .chat-input-wrapper {
@@ -141,6 +336,41 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   opacity: 0.3;
   cursor: not-allowed;
   background: var(--text-muted);
+}
+
+.btn-voice {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 7px;
+  transition: all 0.15s;
+}
+.btn-voice:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-voice.recording { color: var(--danger); animation: pulse 1s infinite; }
+
+.btn-web-search {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 7px;
+  transition: all 0.15s;
+}
+.btn-web-search:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-web-search.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .btn-stop {

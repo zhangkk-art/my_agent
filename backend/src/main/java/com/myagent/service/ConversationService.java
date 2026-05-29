@@ -16,6 +16,8 @@ import java.util.UUID;
 
 @Service
 public class ConversationService {
+    private static final int MAX_MESSAGES = 100;
+
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
 
@@ -32,7 +34,8 @@ public class ConversationService {
             conv.setMessages(messageMapper.selectList(
                     new LambdaQueryWrapper<Message>()
                             .eq(Message::getConversationId, conv.getId())
-                            .orderByAsc(Message::getCreatedAt)));
+                            .orderByAsc(Message::getCreatedAt)
+                            .last("LIMIT " + MAX_MESSAGES)));
         }
         return conversations;
     }
@@ -53,9 +56,22 @@ public class ConversationService {
         List<Message> messages = messageMapper.selectList(
                 new LambdaQueryWrapper<Message>()
                         .eq(Message::getConversationId, id)
-                        .orderByAsc(Message::getCreatedAt));
+                        .orderByAsc(Message::getCreatedAt)
+                        .last("LIMIT " + MAX_MESSAGES));
         conversation.setMessages(messages);
         return conversation;
+    }
+
+    @Transactional
+    public Conversation updateSystemPrompt(String id, String systemPrompt) {
+        Conversation conv = conversationMapper.selectById(id);
+        if (conv == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+        }
+        conv.setSystemPrompt(systemPrompt);
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conv);
+        return conv;
     }
 
     @Transactional
@@ -112,10 +128,31 @@ public class ConversationService {
         return getConversation(conv.getId());
     }
 
+    /**
+     * Delete oldest messages when a conversation exceeds the limit.
+     */
+    @Transactional
+    public void trimMessages(String conversationId) {
+        List<Message> messages = messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conversationId)
+                        .orderByDesc(Message::getCreatedAt));
+        if (messages.size() > MAX_MESSAGES) {
+            for (int i = MAX_MESSAGES; i < messages.size(); i++) {
+                messageMapper.deleteById(messages.get(i).getId());
+            }
+        }
+    }
+
     @Transactional
     public Conversation prepareForRegenerate(String conversationId, String userMessage) {
         Conversation conv = getConversation(conversationId);
         List<Message> messages = conv.getMessages();
+
+        if (messages == null || messages.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot regenerate: conversation has no messages");
+        }
 
         for (int i = messages.size() - 1; i >= 0; i--) {
             if ("assistant".equals(messages.get(i).getRole())) {

@@ -13,11 +13,15 @@
     <ChatArea
       :conversation="currentConversation"
       :loading="loading"
+      :conversationLoading="conversationLoading"
+      :model="selectedModel"
       @send="handleSendMessage"
       @stop="stopStream"
       @regenerate="regenerateMessage"
       @editMessage="handleEditMessage"
       @deleteMessage="handleDeleteMessage"
+      @updateSystemPrompt="handleUpdateSystemPrompt"
+      @update:model="onModelChange"
     >
       <template #hamburger>
         <button class="btn-hamburger" @click="sidebarRef.sidebarOpen = !sidebarRef.sidebarOpen">
@@ -27,52 +31,66 @@
         </button>
       </template>
     </ChatArea>
+    <Toast ref="toastRef" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
+import Toast from './components/Toast.vue'
 import * as api from './api/index.js'
 
 const conversations = ref([])
 const activeConversationId = ref(null)
 const loading = ref(false)
+const conversationLoading = ref(false)
 const abortController = ref(null)
 const sidebarRef = ref(null)
+const toastRef = ref(null)
+const selectedModel = ref(localStorage.getItem('model') || 'deepseek')
 
 const currentConversation = computed(() => {
   if (!activeConversationId.value) return null
   return conversations.value.find(c => c.id === activeConversationId.value) || null
 })
 
+// Dynamic page title
+watch(currentConversation, (conv) => {
+  document.title = conv ? conv.title + ' - Ayer' : 'Ayer'
+})
+
 onMounted(async () => {
   try {
     conversations.value = await api.getConversations()
   } catch (e) {
-    console.error('Failed to load conversations:', e)
+    toastRef.value?.show('加载会话列表失败', 'error')
   }
 })
 
 async function selectConversation(id) {
   activeConversationId.value = id
+  conversationLoading.value = true
   // Move to top immediately for instant feedback
   const idx = conversations.value.findIndex(c => c.id === id)
   if (idx > 0) {
     const [conv] = conversations.value.splice(idx, 1)
     conversations.value.unshift(conv)
   }
-  // Update backend timestamp + load full data
+  // Update backend timestamp (non-critical, fire-and-forget)
+  api.touchConversation(id).catch(() => {})
+  // Load full conversation data
   try {
-    api.touchConversation(id)
     const updated = await api.getConversation(id)
     const newIdx = conversations.value.findIndex(c => c.id === id)
     if (newIdx >= 0) {
       conversations.value[newIdx] = updated
     }
   } catch (e) {
-    console.error('Failed to load conversation:', e)
+    toastRef.value?.show('加载会话失败', 'error')
+  } finally {
+    conversationLoading.value = false
   }
 }
 
@@ -82,7 +100,7 @@ async function newConversation() {
     conversations.value.unshift(conv)
     activeConversationId.value = conv.id
   } catch (e) {
-    console.error('Failed to create conversation:', e)
+    toastRef.value?.show('创建会话失败', 'error')
   }
 }
 
@@ -94,7 +112,7 @@ async function handleDeleteConversation(id) {
       activeConversationId.value = null
     }
   } catch (e) {
-    console.error('Failed to delete conversation:', e)
+    toastRef.value?.show('删除会话失败', 'error')
   }
 }
 
@@ -106,26 +124,31 @@ async function handleRenameConversation(id, title) {
       conv.title = title
     }
   } catch (e) {
-    console.error('Failed to rename conversation:', e)
+    toastRef.value?.show('重命名失败', 'error')
   }
 }
 
-function handleSendMessage(message) {
+function onModelChange(m) {
+  selectedModel.value = m
+  localStorage.setItem('model', m)
+}
+
+function handleSendMessage(message, images = [], webSearch = false) {
   if (loading.value) return
 
   if (!activeConversationId.value) {
-    const title = message.length > 10 ? message.substring(0, 10) : message
+    const title = (message || 'Image').length > 10 ? (message || 'Image').substring(0, 10) : (message || 'Image')
     api.createConversation(title).then(conv => {
       conversations.value.unshift(conv)
       activeConversationId.value = conv.id
-      sendStreamMessage(conv.id, message)
-    }).catch(e => console.error('Failed to create conversation:', e))
+      sendStreamMessage(conv.id, message, images, webSearch)
+    }).catch(e => toastRef.value?.show('创建会话失败', 'error'))
     return
   }
-  sendStreamMessage(activeConversationId.value, message)
+  sendStreamMessage(activeConversationId.value, message, images, webSearch)
 }
 
-function sendStreamMessage(conversationId, message) {
+function sendStreamMessage(conversationId, message, images = [], webSearch = false) {
   loading.value = true
 
   const controller = new AbortController()
@@ -134,16 +157,19 @@ function sendStreamMessage(conversationId, message) {
   // Add user message locally
   const conv = conversations.value.find(c => c.id === conversationId)
   if (conv) {
-    conv.messages.push({
-      id: Date.now().toString(),
+    // Store images in message metadata for display
+    const userMsg = {
+      id: crypto.randomUUID(),
       conversationId,
       role: 'user',
-      content: message,
+      content: message || '[Image]',
+      images: images.length > 0 ? images : undefined,
       createdAt: new Date().toISOString()
-    })
+    }
+    conv.messages.push(userMsg)
     // Add empty assistant message for streaming
     conv.messages.push({
-      id: 'streaming-' + Date.now(),
+      id: 'streaming-' + crypto.randomUUID(),
       conversationId,
       role: 'assistant',
       content: '',
@@ -151,48 +177,49 @@ function sendStreamMessage(conversationId, message) {
     })
   }
 
-  api.sendMessageStream(
-    conversationId,
-    message,
-    // onChunk
-    (content) => {
-      const conv = conversations.value.find(c => c.id === conversationId)
-      if (conv && conv.messages.length > 0) {
-        const lastMsg = conv.messages[conv.messages.length - 1]
-        if (lastMsg.role === 'assistant') {
-          lastMsg.content += content
-        }
+  const onChunk = (content) => {
+    const c = conversations.value.find(c => c.id === conversationId)
+    if (c && c.messages.length > 0) {
+      const lastMsg = c.messages[c.messages.length - 1]
+      if (lastMsg.role === 'assistant') {
+        lastMsg.content += content
       }
-    },
-    // onDone
-    (messageId) => {
-      loading.value = false
-      abortController.value = null
-      if (messageId && conv) {
-        const lastMsg = conv.messages[conv.messages.length - 1]
-        if (lastMsg && lastMsg.id.startsWith('streaming-')) {
-          lastMsg.id = messageId
-        }
+    }
+  }
+  const onDone = (messageId) => {
+    loading.value = false
+    abortController.value = null
+    const c = conversations.value.find(c => c.id === conversationId)
+    if (messageId && c) {
+      const lastMsg = c.messages[c.messages.length - 1]
+      if (lastMsg && lastMsg.id.startsWith('streaming-')) {
+        lastMsg.id = messageId
       }
-      // Refresh conversation list
-      api.getConversations().then(list => {
-        conversations.value = list
-      })
-    },
-    // onError
-    (error) => {
-      loading.value = false
-      abortController.value = null
-      console.error('Stream error:', error)
-      if (conv) {
-        const lastMsg = conv.messages[conv.messages.length - 1]
-        if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content) {
-          lastMsg.content = 'Error: ' + error.message
-        }
+    }
+    api.getConversations().then(list => {
+      if (!loading.value) conversations.value = list
+    })
+  }
+  const onError = (error) => {
+    loading.value = false
+    abortController.value = null
+    toastRef.value?.show('流式响应出错: ' + error.message, 'error')
+    const c = conversations.value.find(c => c.id === conversationId)
+    if (c) {
+      const lastMsg = c.messages[c.messages.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content) {
+        lastMsg.content = 'Error: ' + error.message
       }
-    },
-    controller.signal
-  )
+    }
+  }
+
+  if (images.length > 0) {
+    api.sendImageStream(conversationId, message, selectedModel.value, images, webSearch,
+      onChunk, onDone, onError, controller.signal)
+  } else {
+    api.sendMessageStream(conversationId, message, selectedModel.value, webSearch,
+      onChunk, onDone, onError, controller.signal)
+  }
 }
 
 function stopStream() {
@@ -232,7 +259,7 @@ function regenerateMessage() {
 
   // Add empty assistant message for streaming
   conv.messages.push({
-    id: 'streaming-' + Date.now(),
+    id: 'streaming-' + crypto.randomUUID(),
     conversationId: activeConversationId.value,
     role: 'assistant',
     content: '',
@@ -242,6 +269,7 @@ function regenerateMessage() {
   api.regenerateStream(
     activeConversationId.value,
     lastUserContent,
+    selectedModel.value,
     // onChunk
     (content) => {
       const lastMsg = conv.messages[conv.messages.length - 1]
@@ -260,14 +288,14 @@ function regenerateMessage() {
         }
       }
       api.getConversations().then(list => {
-        conversations.value = list
+        if (!loading.value) conversations.value = list
       })
     },
     // onError
     (error) => {
       loading.value = false
       abortController.value = null
-      console.error('Regenerate error:', error)
+      toastRef.value?.show('重新生成失败: ' + error.message, 'error')
       const lastMsg = conv.messages[conv.messages.length - 1]
       if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content) {
         lastMsg.content = 'Error: ' + error.message
@@ -283,26 +311,79 @@ async function handleEditMessage(messageId, newContent) {
     const conv = conversations.value.find(c => c.id === activeConversationId.value)
     if (!conv) return
 
-    // Update the message content locally
+    // Update local message content
     const msg = conv.messages.find(m => m.id === messageId)
-    if (msg) {
-      msg.content = updated.content
-    }
+    if (msg) msg.content = updated.content
 
-    // Remove all messages after the edited one, then regenerate
+    // Remove all messages after the edited one
     const idx = conv.messages.findIndex(m => m.id === messageId)
     if (idx >= 0) {
       conv.messages = conv.messages.slice(0, idx + 1)
     }
 
-    // Trigger regeneration
+    // Stop any ongoing stream
     if (loading.value) {
       abortController.value?.abort()
       loading.value = false
     }
-    regenerateMessage()
+
+    // After slicing, last message is user — regenerateMessage() would bail out.
+    // Directly start the regeneration stream instead.
+    const controller = new AbortController()
+    abortController.value = controller
+    loading.value = true
+
+    conv.messages.push({
+      id: 'streaming-' + crypto.randomUUID(),
+      conversationId: activeConversationId.value,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString()
+    })
+
+    api.regenerateStream(
+      activeConversationId.value,
+      updated.content,
+      selectedModel.value,
+      (content) => {
+        const lastMsg = conv.messages[conv.messages.length - 1]
+        if (lastMsg?.role === 'assistant') lastMsg.content += content
+      },
+      (newMsgId) => {
+        loading.value = false
+        abortController.value = null
+        if (newMsgId) {
+          const lastMsg = conv.messages[conv.messages.length - 1]
+          if (lastMsg?.id.startsWith('streaming-')) lastMsg.id = newMsgId
+        }
+        api.getConversations().then(list => {
+          if (!loading.value) conversations.value = list
+        })
+      },
+      (error) => {
+        loading.value = false
+        abortController.value = null
+        toastRef.value?.show('重新生成失败: ' + error.message, 'error')
+        const lastMsg = conv.messages[conv.messages.length - 1]
+        if (lastMsg?.role === 'assistant' && !lastMsg.content) {
+          lastMsg.content = 'Error: ' + error.message
+        }
+      },
+      controller.signal
+    )
   } catch (e) {
-    console.error('Failed to edit message:', e)
+    toastRef.value?.show('编辑消息失败', 'error')
+  }
+}
+
+async function handleUpdateSystemPrompt(conversationId, systemPrompt) {
+  try {
+    await api.updateSystemPrompt(conversationId, systemPrompt)
+    const conv = conversations.value.find(c => c.id === conversationId)
+    if (conv) conv.systemPrompt = systemPrompt || null
+    toastRef.value?.show('系统提示词已更新', 'success')
+  } catch (e) {
+    toastRef.value?.show('更新失败', 'error')
   }
 }
 
@@ -314,7 +395,7 @@ async function handleDeleteMessage(messageId) {
       conv.messages = conv.messages.filter(m => m.id !== messageId)
     }
   } catch (e) {
-    console.error('Failed to delete message:', e)
+    toastRef.value?.show('删除消息失败', 'error')
   }
 }
 </script>

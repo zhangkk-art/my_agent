@@ -69,16 +69,33 @@
         </div>
       </div>
       <template v-else>
+        <!-- Assistant: rendered markdown only -->
         <div v-if="message.role === 'assistant'"
              class="markdown-body"
              :class="{ 'is-streaming': isStreaming && message.content }"
-             v-html="renderedContent">
+             v-html="renderedContent"
+             @click="handleContentClick">
         </div>
-        <div v-else class="message-text">{{ message.content }}</div>
+        <!-- User: images + raw text -->
+        <template v-else>
+          <div v-if="message.images && message.images.length > 0" class="message-images">
+            <img
+              v-for="(img, i) in message.images"
+              :key="i"
+              :src="img"
+              class="message-image"
+              @click="previewImage = img"
+            />
+          </div>
+          <div class="message-text">{{ message.content }}</div>
+        </template>
       </template>
       <div v-if="isStreaming && !message.content" class="typing-indicator">
         <span></span><span></span><span></span>
       </div>
+    </div>
+    <div v-if="previewImage" class="image-preview-overlay" @click="previewImage = null">
+      <img :src="previewImage" class="image-preview-full" @click.stop />
     </div>
   </div>
 </template>
@@ -89,6 +106,14 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import { timeAgo } from '../utils/time.js'
 
+const SAFE_URL_PROTOCOLS = /^(https?:|mailto:)/i
+
+function sanitizeUrl(url) {
+  if (!url) return '#'
+  const trimmed = url.trim()
+  return SAFE_URL_PROTOCOLS.test(trimmed) ? trimmed : '#'
+}
+
 function sanitizeHtml(html) {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -96,20 +121,38 @@ function sanitizeHtml(html) {
     .replace(/\bon\w+\s*=\s*"[^"]*"/gi, '')
     .replace(/\bon\w+\s*=\s*'[^']*'/gi, '')
     .replace(/\bon\w+\s*=\s*[^\s>]+/gi, '')
-    .replace(/javascript\s*:/gi, '')
+    .replace(/(href|src)\s*=\s*["']?\s*(javascript|vbscript|data)[^"'\s>]*/gi, '$1="#"')
 }
 
-marked.setOptions({
-  highlight: function (code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(code, { language: lang }).value
-      } catch (e) {}
-    }
-    return hljs.highlightAuto(code).value
+marked.setOptions({ breaks: true })
+
+const renderer = {
+  link(href, title, text) {
+    const safeHref = sanitizeUrl(href)
+    const titleAttr = title ? ` title="${title}"` : ''
+    const rel = safeHref !== '#' ? ' rel="noopener noreferrer"' : ''
+    const target = safeHref !== '#' ? ' target="_blank"' : ''
+    return `<a href="${safeHref}"${titleAttr}${target}${rel}>${text}</a>`
   },
-  breaks: true
-})
+  code(code, infostring) {
+    const lang = (infostring || '').trim() || 'code'
+    let highlighted
+    if (lang !== 'code' && hljs.getLanguage(lang)) {
+      highlighted = hljs.highlight(code, { language: lang }).value
+    } else {
+      highlighted = hljs.highlightAuto(code).value
+    }
+    return '<div class="code-block-wrapper">'
+      + '<div class="code-block-header"><span class="code-lang">' + lang + '</span>'
+      + '<button class="btn-code-copy" data-copy>'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+      + '</button></div>'
+      + '<pre><code class="hljs' + (lang !== 'code' ? ' language-' + lang : '') + '">' + highlighted + '</code></pre>'
+      + '</div>'
+  }
+}
+
+marked.use({ renderer })
 
 const props = defineProps({
   message: Object,
@@ -124,11 +167,29 @@ const copied = ref(false)
 const isEditing = ref(false)
 const editText = ref('')
 const editInput = ref(null)
+const previewImage = ref(null)
 
 const renderedContent = computed(() => {
   if (!props.message.content) return ''
   return sanitizeHtml(marked.parse(props.message.content))
 })
+
+function handleContentClick(e) {
+  const btn = e.target.closest('[data-copy]')
+  if (!btn) return
+  const wrapper = btn.closest('.code-block-wrapper')
+  const code = wrapper?.querySelector('code')
+  if (code) {
+    navigator.clipboard.writeText(code.textContent).then(() => {
+      btn.classList.add('copied')
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>'
+      setTimeout(() => {
+        btn.classList.remove('copied')
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+      }, 2000)
+    }).catch(() => {})
+  }
+}
 
 async function copyContent() {
   try {
@@ -174,6 +235,12 @@ function confirmDelete() {
   display: flex;
 }
 
+@media (max-width: 768px) {
+  .message-row {
+    padding: 4px 12px;
+  }
+}
+
 .message-row.user {
   justify-content: flex-end;
 }
@@ -188,6 +255,12 @@ function confirmDelete() {
   border-radius: 12px;
   font-size: 14px;
   position: relative;
+}
+
+@media (max-width: 768px) {
+  .message-bubble {
+    max-width: 88%;
+  }
 }
 
 .message-row.user .message-bubble {
@@ -324,5 +397,44 @@ function confirmDelete() {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.message-image {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  transition: transform 0.15s;
+}
+.message-image:hover {
+  transform: scale(1.05);
+}
+
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  cursor: pointer;
+}
+
+.image-preview-full {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  object-fit: contain;
+  cursor: default;
 }
 </style>

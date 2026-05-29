@@ -1,18 +1,30 @@
 <template>
   <div class="message-list" ref="listRef" @scroll="onScroll">
-    <MessageBubble
-      v-for="(msg, index) in messages"
-      :key="msg.id"
-      :message="msg"
-      :isStreaming="loading && msg === messages[messages.length - 1] && msg.role === 'assistant'"
-      :isLastAi="msg.role === 'assistant' && index === messages.length - 1 && !loading"
-      @regenerate="$emit('regenerate')"
-      @editMessage="(id, content) => $emit('editMessage', id, content)"
-      @deleteMessage="id => $emit('deleteMessage', id)"
-    />
-    <div v-if="messages.length === 0" class="empty-messages">
-      Send a message to start the conversation.
-    </div>
+    <template v-if="conversationLoading && messages.length === 0">
+      <div v-for="i in 4" :key="'s'+i" class="skeleton-row" :class="i % 2 === 0 ? 'right' : 'left'">
+        <div class="skeleton-bubble">
+          <div class="skeleton-line skeleton-role"></div>
+          <div class="skeleton-line skeleton-text" :style="{ width: (40 + Math.random() * 40) + '%' }"></div>
+          <div class="skeleton-line skeleton-text" :style="{ width: (20 + Math.random() * 50) + '%' }"></div>
+          <div class="skeleton-line skeleton-text-short" :style="{ width: (30 + Math.random() * 30) + '%' }"></div>
+        </div>
+      </div>
+    </template>
+    <template v-else>
+      <MessageBubble
+        v-for="(msg, index) in messages"
+        :key="msg.id"
+        :message="msg"
+        :isStreaming="loading && msg === messages[messages.length - 1] && msg.role === 'assistant'"
+        :isLastAi="msg.role === 'assistant' && index === messages.length - 1 && !loading"
+        @regenerate="$emit('regenerate')"
+        @editMessage="(id, content) => $emit('editMessage', id, content)"
+        @deleteMessage="id => $emit('deleteMessage', id)"
+      />
+      <div v-if="messages.length === 0" class="empty-messages">
+        Send a message to start the conversation.
+      </div>
+    </template>
     <button v-if="showScrollBtn" class="btn-scroll-bottom" @click="scrollToBottom">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="6 9 12 15 18 9"/>
@@ -27,7 +39,8 @@ import MessageBubble from './MessageBubble.vue'
 
 const props = defineProps({
   messages: Array,
-  loading: Boolean
+  loading: Boolean,
+  conversationLoading: Boolean
 })
 
 defineEmits(['regenerate', 'editMessage', 'deleteMessage'])
@@ -56,6 +69,15 @@ function onScroll() {
   showScrollBtn.value = userScrolledUp.value
 }
 
+// When a new message is sent (loading starts), always jump to the new exchange
+watch(() => props.loading, (isLoading) => {
+  if (isLoading) {
+    userScrolledUp.value = false
+    nextTick(() => scrollToBottom())
+  }
+})
+
+// During streaming, keep following the bottom unless user scrolled up
 watch(
   () => props.messages,
   () => {
@@ -82,6 +104,52 @@ watch(
   color: var(--text-muted);
   padding: 48px 24px;
   font-size: 14px;
+}
+
+/* Skeleton */
+.skeleton-row {
+  padding: 12px 24px;
+  display: flex;
+}
+.skeleton-row.left { justify-content: flex-start; }
+.skeleton-row.right { justify-content: flex-end; }
+
+.skeleton-bubble {
+  max-width: 70%;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--border-color) 25%, var(--bg-hover) 50%, var(--border-color) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.skeleton-role {
+  width: 30px;
+  height: 10px;
+  margin-bottom: 4px;
+}
+
+.skeleton-text-short {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--border-color) 25%, var(--bg-hover) 50%, var(--border-color) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .btn-scroll-bottom {

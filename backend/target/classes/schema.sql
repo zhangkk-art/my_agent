@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS conversations (
     id VARCHAR(36) PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
+    system_prompt TEXT NULL DEFAULT NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

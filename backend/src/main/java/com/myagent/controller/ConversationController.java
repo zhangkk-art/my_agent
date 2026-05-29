@@ -25,8 +25,8 @@ public class ConversationController {
     @PostMapping
     public Conversation createConversation(@RequestBody(required = false) Map<String, String> body) {
         String title = body != null ? body.getOrDefault("title", "New Chat") : "New Chat";
-        if (title.length() > 10) {
-            title = title.substring(0, 10);
+        if (title.length() > 50) {
+            title = title.substring(0, 50);
         }
         return conversationService.createConversation(title);
     }
@@ -40,6 +40,12 @@ public class ConversationController {
     public Conversation renameConversation(@PathVariable String id, @RequestBody Map<String, String> body) {
         String title = body.getOrDefault("title", "Untitled");
         return conversationService.renameConversation(id, title);
+    }
+
+    @PutMapping("/{id}/system-prompt")
+    public Conversation updateSystemPrompt(@PathVariable String id, @RequestBody Map<String, String> body) {
+        String prompt = body.getOrDefault("systemPrompt", "");
+        return conversationService.updateSystemPrompt(id, prompt.isBlank() ? null : prompt);
     }
 
     @PatchMapping("/{id}/touch")

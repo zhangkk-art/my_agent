@@ -20,3 +20,16 @@ export function timeAgo(dateStr) {
     }
   }
 }
+
+export function dateGroup(dateStr) {
+  const now = new Date()
+  const d = new Date(dateStr)
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000)
+  const weekStart = new Date(todayStart.getTime() - 6 * 86400000)
+
+  if (d >= todayStart) return '今天'
+  if (d >= yesterdayStart) return '昨天'
+  if (d >= weekStart) return '本周'
+  return '更早'
+}

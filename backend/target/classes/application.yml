@@ -19,6 +19,42 @@ spring:
         options:
           model: deepseek-chat
 
+    mcp:
+      client:
+        enabled: false
+        request-timeout: 120s
+        toolcallback:
+          enabled: true
+        stdio:
+          connections:
+            # Filesystem: read/write/search files in the allowed directory
+            # Set MCP_FILESYSTEM_PATH env var to change the allowed directory
+            filesystem:
+              command: cmd.exe
+              args:
+                - /c
+                - mcp-server-filesystem
+                - "${user.home}"
+            # Brave Search: real-time web search (requires BRAVE_API_KEY env var)
+            # Get a free key at https://brave.com/search/api/
+            # Uncomment to enable after setting BRAVE_API_KEY:
+            # brave-search:
+            #   command: cmd.exe
+            #   args:
+            #     - /c
+            #     - npx
+            #     - -y
+            #     - "@modelcontextprotocol/server-brave-search"
+            #   env:
+            #     BRAVE_API_KEY: "${BRAVE_API_KEY}"
+
+app:
+  ai:
+    qwen:
+      api-key: ${DASHSCOPE_API_KEY:sk-1db11d8ad51c44caad5ef4e52e5ca41f}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      model: qwen-plus
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

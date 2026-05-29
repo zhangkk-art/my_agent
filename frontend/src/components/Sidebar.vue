@@ -2,12 +2,11 @@
   <aside class="sidebar" :class="{ open: sidebarOpen }">
     <div class="sidebar-header">
       <div class="logo">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          <path d="M2 17l10 5 10-5"/>
-          <path d="M2 12l10 5 10-5"/>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M10 2 L11.2 8.8 L18 10 L11.2 11.2 L10 18 L8.8 11.2 L2 10 L8.8 8.8 Z"/>
+          <path d="M18.5 13 L19.2 16.3 L22.5 17 L19.2 17.7 L18.5 21 L17.8 17.7 L14.5 17 L17.8 16.3 Z"/>
         </svg>
-        <span>AI Chat</span>
+        <span>Ayer</span>
       </div>
       <div class="header-actions">
         <button class="btn-icon" :title="themeTitle" @click="toggleTheme">
@@ -43,59 +42,86 @@
       />
     </div>
     <div class="conversation-list">
-      <div
-        v-for="conv in filteredConversations"
-        :key="conv.id"
-        class="conversation-item"
-        :class="{ active: conv.id === activeId }"
-        @click="selectConv(conv.id)"
-      >
-        <svg class="conv-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-        </svg>
-        <span
-          class="conv-title"
-          :title="conv.title"
-          @dblclick.stop="startRename(conv)"
-        >
-          <template v-if="renamingId === conv.id">
-            <input
-              ref="renameInput"
-              v-model="renameText"
-              class="rename-input"
-              @blur="finishRename(conv)"
-              @keydown.enter="finishRename(conv)"
-              @keydown.escape="cancelRename"
-              @click.stop
-            />
-          </template>
-          <template v-else>
-            {{ conv.title }}
-          </template>
-        </span>
-        <button
-          class="btn-delete"
-          title="Delete"
-          @click.stop="confirmDelete(conv)"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"/>
-            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-          </svg>
-        </button>
-      </div>
-      <div v-if="filteredConversations.length === 0 && conversations.length > 0" class="empty-list">
+      <template v-if="filteredConversations.length > 0">
+        <template v-for="group in groupedConversations" :key="group.label">
+          <div class="list-group-label">{{ group.label }}</div>
+          <div
+            v-for="conv in group.items"
+            :key="conv.id"
+            class="conversation-item"
+            :class="{ active: conv.id === activeId }"
+            @click="selectConv(conv.id)"
+          >
+            <svg class="conv-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+            </svg>
+            <span
+              class="conv-title"
+              :title="conv.title"
+              @dblclick.stop="startRename(conv)"
+            >
+              <template v-if="renamingId === conv.id">
+                <input
+                  ref="renameInput"
+                  v-model="renameText"
+                  class="rename-input"
+                  @blur="finishRename(conv)"
+                  @keydown.enter="finishRename(conv)"
+                  @keydown.escape="cancelRename"
+                  @click.stop
+                />
+              </template>
+              <template v-else>
+                {{ conv.title }}
+              </template>
+            </span>
+            <button
+              class="btn-delete"
+              title="Delete"
+              @click.stop="confirmDelete(conv)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+              </svg>
+            </button>
+          </div>
+        </template>
+      </template>
+      <div v-else-if="searchQuery && conversations.length > 0" class="empty-list">
         No matching conversations
       </div>
       <div v-else-if="conversations.length === 0" class="empty-list">
         No conversations yet
       </div>
+
+      <!-- Message content search results -->
+      <template v-if="searchQuery.trim().length >= 2">
+        <div class="list-group-label msg-search-label">
+          消息内容
+          <span v-if="msgSearching" class="searching-dot">...</span>
+        </div>
+        <template v-if="msgResults.length > 0">
+          <div
+            v-for="r in msgResults"
+            :key="r.messageId"
+            class="msg-result-item"
+            @click="selectConv(r.conversationId)"
+          >
+            <div class="msg-result-conv">{{ r.conversationTitle }}</div>
+            <div class="msg-result-content">{{ r.content.substring(0, 80) }}{{ r.content.length > 80 ? '…' : '' }}</div>
+          </div>
+        </template>
+        <div v-else-if="!msgSearching" class="empty-list">No messages found</div>
+      </template>
     </div>
   </aside>
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { dateGroup } from '../utils/time.js'
+import * as api from '../api/index.js'
 
 const props = defineProps({
   conversations: Array,
@@ -110,6 +136,22 @@ const renameInput = ref(null)
 const searchQuery = ref('')
 const theme = ref('light')
 const sidebarOpen = ref(false)
+const msgResults = ref([])
+const msgSearching = ref(false)
+let searchTimer = null
+
+watch(searchQuery, (q) => {
+  clearTimeout(searchTimer)
+  msgResults.value = []
+  if (q.trim().length < 2) return
+  msgSearching.value = true
+  searchTimer = setTimeout(async () => {
+    try {
+      msgResults.value = await api.searchMessages(q.trim())
+    } catch {}
+    msgSearching.value = false
+  }, 500)
+})
 
 const themeTitle = computed(() => theme.value === 'light' ? 'Switch to dark mode' : 'Switch to light mode')
 
@@ -117,6 +159,18 @@ const filteredConversations = computed(() => {
   if (!searchQuery.value.trim()) return props.conversations
   const q = searchQuery.value.toLowerCase()
   return props.conversations.filter(c => c.title.toLowerCase().includes(q))
+})
+
+const groupedConversations = computed(() => {
+  const list = filteredConversations.value
+  if (searchQuery.value.trim()) return [{ label: '搜索结果', items: list }]
+  const groups = { '今天': [], '昨天': [], '本周': [], '更早': [] }
+  for (const conv of list) {
+    const label = dateGroup(conv.updatedAt || conv.createdAt)
+    groups[label].push(conv)
+  }
+  const order = ['今天', '昨天', '本周', '更早']
+  return order.filter(k => groups[k].length > 0).map(k => ({ label: k, items: groups[k] }))
 })
 
 function selectConv(id) {
@@ -293,6 +347,15 @@ defineExpose({ sidebarOpen })
   background: var(--bg-card);
 }
 
+.list-group-label {
+  padding: 16px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .conv-icon {
   flex-shrink: 0;
   color: var(--text-muted);
@@ -340,6 +403,39 @@ defineExpose({ sidebarOpen })
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.msg-search-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.searching-dot {
+  color: var(--accent);
+  font-size: 11px;
+}
+.msg-result-item {
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.msg-result-item:hover {
+  background: var(--bg-hover);
+}
+.msg-result-conv {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-result-content {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 @media (max-width: 768px) {
