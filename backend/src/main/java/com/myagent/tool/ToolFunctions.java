@@ -33,7 +33,7 @@ public class ToolFunctions {
         return new TimeResponse(now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
     }
 
-    @Tool(description = "Get the current real weather for a specified city. MUST be called EVERY time the user asks about weather/temperature — never reuse weather data from conversation history, as weather changes constantly.")
+    @Tool(description = "获取指定城市的天气信息，包括当前天气和未来几天预报。每次用户询问天气/温度时都必须调用此工具——绝不能复用对话历史中的天气数据。支持查询今天、明天及未来几天的天气。")
     public WeatherResponse getWeather(WeatherRequest request) {
         try {
             String city = request.city() != null ? request.city() : "Beijing";
@@ -49,34 +49,62 @@ public class ToolFunctions {
 
             if (response.statusCode() == 200) {
                 JsonNode root = objectMapper.readTree(response.body());
+                StringBuilder result = new StringBuilder();
+
+                // --- Current conditions ---
                 JsonNode current = root.path("current_condition").get(0);
+                if (!current.isMissingNode()) {
+                    String tempC     = current.path("temp_C").asText();
+                    String feelsLike = current.path("FeelsLikeC").asText();
+                    String humidity  = current.path("humidity").asText();
+                    String weatherDesc = current.path("weatherDesc").get(0).path("value").asText();
+                    String windSpeed = current.path("windspeedKmph").asText();
+                    String windDir   = current.path("winddir16Point").asText();
 
-                String tempC     = current.path("temp_C").asText();
-                String feelsLike = current.path("FeelsLikeC").asText();
-                String humidity  = current.path("humidity").asText();
-                String weatherDesc = current.path("weatherDesc").get(0).path("value").asText();
-                String windSpeed = current.path("windspeedKmph").asText();
-                String windDir   = current.path("winddir16Point").asText();
-
-                String result = String.format(
-                        "City: %s\nTemperature: %s°C (feels like %s°C)\nWeather: %s\nHumidity: %s%%\nWind: %s km/h %s",
-                        city, tempC, feelsLike, weatherDesc, humidity, windSpeed, windDir);
-
-                JsonNode nearestArea = root.path("nearest_area").get(0);
-                if (!nearestArea.isMissingNode()) {
-                    String areaName = nearestArea.path("areaName").get(0).path("value").asText();
-                    String country  = nearestArea.path("country").get(0).path("value").asText();
-                    String region   = nearestArea.path("region").get(0).path("value").asText();
-                    result = String.format(
-                            "City: %s (%s, %s, %s)\nTemperature: %s°C (feels like %s°C)\nWeather: %s\nHumidity: %s%%\nWind: %s km/h %s",
-                            city, areaName, region, country, tempC, feelsLike, weatherDesc, humidity, windSpeed, windDir);
+                    JsonNode nearestArea = root.path("nearest_area").get(0);
+                    if (!nearestArea.isMissingNode()) {
+                        String areaName = nearestArea.path("areaName").get(0).path("value").asText();
+                        String country  = nearestArea.path("country").get(0).path("value").asText();
+                        String region   = nearestArea.path("region").get(0).path("value").asText();
+                        result.append(String.format(
+                                "城市: %s (%s, %s, %s)\n", city, areaName, region, country));
+                    } else {
+                        result.append("城市: ").append(city).append("\n");
+                    }
+                    result.append(String.format(
+                            "【当前天气】\n温度: %s°C (体感 %s°C)\n天气: %s\n湿度: %s%%\n风速: %s km/h %s\n",
+                            tempC, feelsLike, weatherDesc, humidity, windSpeed, windDir));
                 }
-                return new WeatherResponse(result);
+
+                // --- Multi-day forecast ---
+                JsonNode weather = root.path("weather");
+                if (weather.isArray() && weather.size() > 0) {
+                    result.append("\n【未来天气预报】\n");
+                    for (JsonNode day : weather) {
+                        String date = day.path("date").asText();
+                        String minTemp = day.path("mintempC").asText();
+                        String maxTemp = day.path("maxtempC").asText();
+                        String avgTemp = day.path("avgtempC").asText();
+                        JsonNode hourly = day.path("hourly");
+                        // Get midday (index 4-6, around 12pm) weather description as representative
+                        String dayDesc = "";
+                        if (hourly.isArray() && hourly.size() > 4) {
+                            JsonNode midDay = hourly.get(Math.min(4, hourly.size() - 1));
+                            dayDesc = midDay.path("weatherDesc").get(0).path("value").asText();
+                        }
+                        result.append(String.format(
+                                "%s: %s ~ %s°C (平均 %s°C)%s\n",
+                                date, minTemp, maxTemp, avgTemp,
+                                dayDesc.isEmpty() ? "" : ", " + dayDesc));
+                    }
+                }
+
+                return new WeatherResponse(result.toString().trim());
             } else {
-                return new WeatherResponse("Unable to fetch weather for " + city + " (HTTP " + response.statusCode() + ")");
+                return new WeatherResponse("无法获取 " + city + " 的天气 (HTTP " + response.statusCode() + ")");
             }
         } catch (Exception e) {
-            return new WeatherResponse("Failed to get weather: " + e.getMessage());
+            return new WeatherResponse("获取天气失败: " + e.getMessage());
         }
     }
 

@@ -73,16 +73,26 @@ public class ChatService {
 
     /**
      * Build a dynamic system prompt. For real-time queries (time/weather),
-     * appends a forceful override instruction that tells the model the
-     * conversation history data is stale and the tool MUST be called.
+     * appends a forceful override instruction. For queries that need web search
+     * but have it disabled, tells the model to prompt the user to enable it.
      */
-    private String buildDynamicSystemPrompt(String conversationId, String userMessage) {
+    private String buildDynamicSystemPrompt(String conversationId, String userMessage, boolean webSearch) {
         String base = buildSystemPrompt(conversationId);
         String requiredTool = detectRequiredTool(userMessage);
         if (requiredTool != null) {
             base += "\n\n【系统指令】用户正在询问实时信息。请立即调用 "
                   + requiredTool + " 工具。不要使用历史记录中的数据。";
             log.info("Real-time query detected — injecting tool-force prompt for: {}", requiredTool);
+        }
+        if (!webSearch && detectWebSearchNeed(userMessage)) {
+            base += "\n\n【系统指令】用户的问题需要联网搜索才能准确回答，但用户尚未开启联网搜索功能。"
+                  + "请友好地告知用户：这个问题需要联网搜索，请点击输入框左侧的地球图标开启联网搜索后再提问。"
+                  + "绝对不要猜测或编造答案——没有联网搜索你无法获取这些实时信息。";
+            log.info("Web search needed but disabled — prompting user to enable");
+        }
+        if (webSearch) {
+            base += "\n\n【系统指令】用户已开启联网搜索。对于任何需要最新信息、实时数据的问题，" +
+                    "必须调用 searchWeb 工具搜索，绝对不要使用对话历史中旧的搜索结果——那些数据已经过时。";
         }
         return base;
     }
@@ -101,6 +111,32 @@ public class ChatService {
             return "getWeather";
         }
         return null;
+    }
+
+    /**
+     * Detect if the user's query likely needs web search to answer accurately.
+     * Only triggers when webSearch toggle is off — tells the model to ask the user to enable it.
+     */
+    private boolean detectWebSearchNeed(String userMessage) {
+        if (userMessage == null || userMessage.isBlank()) return false;
+        String msg = userMessage;
+        // News & current events
+        if (containsAny(msg, "新闻", "最新", "最近发生", "热点", "热搜", "头条",
+                "breaking", "latest news", "headline")) return true;
+        // Finance & crypto
+        if (containsAny(msg, "股价", "股票", "股市", "比特币", "以太坊", "加密货币",
+                "大盘", "涨停", "跌停", "币价", "coin price",
+                "stock price", "btc", "eth", "crypto", "nasdaq", "dow jones")) return true;
+        // Sports & events
+        if (containsAny(msg, "比分", "赛程", "赛事", "比赛结果", "欧冠", "英超", "NBA",
+                "世界杯", "奥运会", "score", "game result", "match")) return true;
+        // Real-time information that requires search
+        if (containsAny(msg, "最新消息", "最近动态", "实时数据", "今天发生",
+                "昨天发生", "最近发生", "刚刚发生", "突发", "地震")) return true;
+        // Explicit search intent
+        if (containsAny(msg, "搜索", "搜一下", "查一下", "帮我查", "帮我搜",
+                "上网查", "网上查", "查查", "帮我找", "找一下")) return true;
+        return false;
     }
 
     private boolean containsAny(String msg, String... keywords) {
@@ -152,12 +188,11 @@ public class ChatService {
     }
 
     /**
-     * Build conversation history. For real-time queries (time/weather),
-     * completely replaces assistant messages that contain stale time/weather
-     * data — the original content is removed so the model cannot see it.
+     * Build conversation history. Redacts stale time/weather/search data so the model
+     * cannot reuse it from history and must call the tool for fresh data.
      */
     public List<org.springframework.ai.chat.messages.Message> buildHistory(
-            List<Message> messages, String currentUserMessage) {
+            List<Message> messages, String currentUserMessage, boolean webSearch) {
         String requiredTool = detectRequiredTool(currentUserMessage);
         return messages.stream()
                 .map(m -> {
@@ -165,15 +200,38 @@ public class ChatService {
                         return new UserMessage(m.getContent());
                     } else {
                         String content = m.getContent();
-                        if (requiredTool != null && containsRealTimeData(content, requiredTool)) {
-                            // Completely replace — do NOT include original content
+                        if (shouldRedact(content, requiredTool, webSearch)) {
                             content = "[过时数据已清除]";
-                            log.info("Redacted stale {} data from history", requiredTool);
+                            log.info("Redacted stale data from history (tool={}, webSearch={})",
+                                    requiredTool, webSearch);
                         }
                         return new AssistantMessage(content);
                     }
                 })
                 .collect(Collectors.toList());
+    }
+
+    private boolean shouldRedact(String content, String requiredTool, boolean webSearch) {
+        // Redact stale time/weather data when user asks about them
+        if (requiredTool != null && containsRealTimeData(content, requiredTool)) {
+            return true;
+        }
+        // Redact stale search results when web search is enabled
+        if (webSearch && containsSearchResults(content)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean containsSearchResults(String content) {
+        if (content == null) return false;
+        // Pattern: "搜索「...」的结果：" — our search result header
+        if (content.contains("搜索「") && content.contains("」的结果")) return true;
+        // Pattern: numbered list with URLs
+        if (content.matches(".*\\d+\\.\\s+\\*\\*.*\\*\\*\n.*链接:.*")) return true;
+        // Pattern: "Search results" or "Web search returned"
+        if (content.contains("Search results") || content.contains("Web search returned")) return true;
+        return false;
     }
 
     private boolean containsRealTimeData(String content, String requiredTool) {
@@ -205,9 +263,9 @@ public class ChatService {
         insertMessage(conv.getId(), "user", userMessage);
         conv = conversationService.getConversation(conv.getId());
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, false);
         var spec = selectClient(model).prompt()
-                .system(buildDynamicSystemPrompt(conv.getId(), userMessage))
+                .system(buildDynamicSystemPrompt(conv.getId(), userMessage, false))
                 .messages(history);
         spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
@@ -230,17 +288,18 @@ public class ChatService {
     public StreamContext chatStream(String conversationId, String userMessage, String model, boolean webSearch) {
         Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
         if (!history.isEmpty() && history.get(history.size() - 1) instanceof UserMessage) {
             history.set(history.size() - 1, new UserMessage(userMessage));
         }
         var spec = selectClient(model).prompt()
-                .system(buildDynamicSystemPrompt(conv.getId(), userMessage))
+                .system(buildDynamicSystemPrompt(conv.getId(), userMessage, webSearch))
                 .messages(history);
-        spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
-            spec.tools(webSearchTools);
+            spec.tools(toolFunctions, webSearchTools);
+        } else {
+            spec.tools(toolFunctions);
         }
         Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
         return new StreamContext(conv.getId(), content);
@@ -282,7 +341,7 @@ public class ChatService {
     public StreamContext chatImageStream(String conversationId, String userMessage, String model, List<String> images, boolean webSearch) {
         Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
         List<Media> mediaList = new ArrayList<>();
         for (String img : images) {
             if (img.startsWith("data:image/")) {
@@ -304,12 +363,13 @@ public class ChatService {
         }
 
         var spec = selectClient(model).prompt()
-                .system(buildDynamicSystemPrompt(conv.getId(), userMessage))
+                .system(buildDynamicSystemPrompt(conv.getId(), userMessage, webSearch))
                 .messages(history);
-        spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
-            spec.tools(webSearchTools);
+            spec.tools(toolFunctions, webSearchTools);
+        } else {
+            spec.tools(toolFunctions);
         }
         Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
         return new StreamContext(conv.getId(), content);
@@ -318,17 +378,18 @@ public class ChatService {
     public StreamContext regenerateStream(String conversationId, String userMessage, String model, boolean webSearch) {
         Conversation conv = conversationService.prepareForRegenerate(conversationId, userMessage);
 
-        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage);
+        List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
         if (!history.isEmpty() && history.get(history.size() - 1) instanceof UserMessage) {
             history.set(history.size() - 1, new UserMessage(userMessage));
         }
         var spec = selectClient(model).prompt()
-                .system(buildDynamicSystemPrompt(conv.getId(), userMessage))
+                .system(buildDynamicSystemPrompt(conv.getId(), userMessage, webSearch))
                 .messages(history);
-        spec.tools(toolFunctions);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
-            spec.tools(webSearchTools);
+            spec.tools(toolFunctions, webSearchTools);
+        } else {
+            spec.tools(toolFunctions);
         }
         Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
         return new StreamContext(conv.getId(), content);

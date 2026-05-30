@@ -1,6 +1,5 @@
 com\myagent\mapper\ConversationMapper.class
 com\myagent\model\Message.class
-com\myagent\tool\WebSearchTools$WebSearchRequest.class
 com\myagent\config\WebConfig$1.class
 com\myagent\tool\ToolFunctions$WeatherResponse.class
 com\myagent\controller\ChatController.class
@@ -8,13 +7,13 @@ com\myagent\tool\ToolFunctions$TimeRequest.class
 com\myagent\model\Conversation.class
 com\myagent\service\ChatService$StreamContext.class
 com\myagent\controller\ConversationController.class
+com\myagent\tool\WebSearchTools$BochaSearchRequest.class
 com\myagent\tool\WebSearchTools$SearchResultItem.class
 com\myagent\service\ChatService.class
 com\myagent\tool\WebSearchTools.class
 com\myagent\config\WebConfig.class
 com\myagent\tool\ToolFunctions$WeatherRequest.class
 com\myagent\model\ChatRequest.class
-com\myagent\tool\WebSearchTools$SearchApiRequest.class
 com\myagent\mapper\MessageMapper.class
 com\myagent\tool\WebSearchTools$WebSearchResponse.class
 com\myagent\service\ConversationService.class
