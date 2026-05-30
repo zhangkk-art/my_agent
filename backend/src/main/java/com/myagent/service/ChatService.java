@@ -8,6 +8,8 @@ import com.myagent.model.Message;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.content.Media;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
@@ -29,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -72,19 +75,28 @@ public class ChatService {
     }
 
     /**
-     * Build a dynamic system prompt. For real-time queries (time/weather),
-     * appends a forceful override instruction. For queries that need web search
-     * but have it disabled, tells the model to prompt the user to enable it.
+     * Build a dynamic system prompt. For real-time queries (time/weather), pre-fetches
+     * the data server-side and injects it directly — bypassing the model's unreliable
+     * tool-calling in streaming mode. For web search queries, injects appropriate instructions.
      */
     private String buildDynamicSystemPrompt(String conversationId, String userMessage, boolean webSearch) {
         String base = buildSystemPrompt(conversationId);
         String requiredTool = detectRequiredTool(userMessage);
-        if (requiredTool != null) {
-            base += "\n\n【系统指令】用户正在询问实时信息。请立即调用 "
-                  + requiredTool + " 工具。不要使用历史记录中的数据。";
-            log.info("Real-time query detected — injecting tool-force prompt for: {}", requiredTool);
+
+        if ("getCurrentTime".equals(requiredTool)) {
+            String currentTime = toolFunctions.getCurrentTime(new ToolFunctions.TimeRequest(null)).datetime();
+            base += "\n\n【实时数据】当前时间：" + currentTime
+                  + "。请直接使用此时间回答，无需调用工具，不要参考历史消息中的任何时间数据。";
+            log.info("Pre-fetched current time for system prompt: {}", currentTime);
+        } else if ("getWeather".equals(requiredTool)) {
+            String city = extractCity(userMessage);
+            String weather = toolFunctions.getWeather(new ToolFunctions.WeatherRequest(city)).weather();
+            base += "\n\n【实时数据】以下是刚刚获取的最新天气信息：\n" + weather
+                  + "\n请直接使用以上数据回答，无需调用工具，不要参考历史消息中的任何天气数据。";
+            log.info("Pre-fetched weather for city '{}' for system prompt", city);
         }
-        if (!webSearch && detectWebSearchNeed(userMessage)) {
+
+        if (!webSearch && requiredTool == null && detectWebSearchNeed(userMessage)) {
             base += "\n\n【系统指令】用户的问题需要联网搜索才能准确回答，但用户尚未开启联网搜索功能。"
                   + "请友好地告知用户：这个问题需要联网搜索，请点击输入框左侧的地球图标开启联网搜索后再提问。"
                   + "绝对不要猜测或编造答案——没有联网搜索你无法获取这些实时信息。";
@@ -97,14 +109,45 @@ public class ChatService {
         return base;
     }
 
+    /**
+     * Extract city name from a weather-related query.
+     * Checks known cities first, then falls back to text before weather keywords.
+     */
+    private String extractCity(String userMessage) {
+        String[] knownCities = {
+            "北京", "上海", "广州", "深圳", "成都", "杭州", "南京", "武汉", "西安", "重庆",
+            "天津", "苏州", "长沙", "郑州", "青岛", "厦门", "济南", "合肥", "福州", "昆明",
+            "哈尔滨", "大连", "宁波", "无锡", "沈阳", "南昌", "贵阳", "太原", "石家庄",
+            "Beijing", "Shanghai", "Guangzhou", "Shenzhen", "Chengdu", "Hangzhou",
+            "Tokyo", "Seoul", "New York", "London", "Paris", "Singapore"
+        };
+        for (String city : knownCities) {
+            if (userMessage.contains(city)) return city;
+        }
+        // Fallback: grab text before a weather keyword and strip non-city characters
+        for (String kw : new String[]{"天气", "气温", "温度"}) {
+            int idx = userMessage.indexOf(kw);
+            if (idx > 0) {
+                String before = userMessage.substring(Math.max(0, idx - 4), idx).trim();
+                before = before.replaceAll("[的今明后这那天]", "").trim();
+                if (before.length() >= 2) return before;
+            }
+        }
+        return "Beijing";
+    }
+
     private String detectRequiredTool(String userMessage) {
         if (userMessage == null || userMessage.isBlank()) return null;
         String msg = userMessage;
-        if (containsAny(msg, "几点", "几号", "日期", "星期几", "今天周几", "今天星期",
+        if (containsAny(msg,
+                "几点", "几号", "几日", "几月", "哪天", "哪月",
+                "日期", "星期几", "今天周几", "今天星期", "周几", "星期几",
                 "什么时候", "啥时候", "今天是什么日子",
                 "明天周几", "明天星期", "明天几号", "明天日期",
                 "当前时间", "现在时间", "现在几点", "今天几", "今天日期",
-                "what time", "what day", "current time", "today's date")) {
+                "现在是几", "什么时间", "是几点", "几点了", "几点钟",
+                "what time", "what day", "current time", "today's date",
+                "today is", "what's the date", "what date")) {
             return "getCurrentTime";
         }
         if (containsAny(msg, "天气", "气温", "温度", "下雨", "下雪")) {
@@ -188,27 +231,31 @@ public class ChatService {
     }
 
     /**
-     * Build conversation history. Redacts stale time/weather/search data so the model
-     * cannot reuse it from history and must call the tool for fresh data.
+     * Build conversation history. Drops message pairs whose assistant reply contains stale
+     * time/weather/search data — prevents the model from echoing a "[过时数据]" placeholder
+     * or anchoring on old values. Dropping the whole pair (user + assistant) keeps history clean.
      */
     public List<org.springframework.ai.chat.messages.Message> buildHistory(
             List<Message> messages, String currentUserMessage, boolean webSearch) {
         String requiredTool = detectRequiredTool(currentUserMessage);
-        return messages.stream()
-                .map(m -> {
-                    if ("user".equals(m.getRole())) {
-                        return new UserMessage(m.getContent());
-                    } else {
-                        String content = m.getContent();
-                        if (shouldRedact(content, requiredTool, webSearch)) {
-                            content = "[过时数据已清除]";
-                            log.info("Redacted stale data from history (tool={}, webSearch={})",
-                                    requiredTool, webSearch);
-                        }
-                        return new AssistantMessage(content);
+        List<org.springframework.ai.chat.messages.Message> result = new ArrayList<>();
+        for (Message m : messages) {
+            if ("assistant".equals(m.getRole())) {
+                if (shouldRedact(m.getContent(), requiredTool, webSearch)) {
+                    // Also remove the preceding user message so the pair is fully dropped
+                    if (!result.isEmpty() && result.get(result.size() - 1) instanceof UserMessage) {
+                        result.remove(result.size() - 1);
                     }
-                })
-                .collect(Collectors.toList());
+                    log.info("Dropped stale message pair from history (tool={}, webSearch={})",
+                            requiredTool, webSearch);
+                    continue;
+                }
+                result.add(new AssistantMessage(m.getContent()));
+            } else {
+                result.add(new UserMessage(m.getContent()));
+            }
+        }
+        return result;
     }
 
     private boolean shouldRedact(String content, String requiredTool, boolean webSearch) {
@@ -228,7 +275,8 @@ public class ChatService {
         // Pattern: "搜索「...」的结果：" — our search result header
         if (content.contains("搜索「") && content.contains("」的结果")) return true;
         // Pattern: numbered list with URLs
-        if (content.matches(".*\\d+\\.\\s+\\*\\*.*\\*\\*\n.*链接:.*")) return true;
+        if (Pattern.compile("\\d+\\.\\s+\\*\\*.*?\\*\\*", Pattern.DOTALL).matcher(content).find()
+                && content.contains("链接:")) return true;
         // Pattern: "Search results" or "Web search returned"
         if (content.contains("Search results") || content.contains("Web search returned")) return true;
         return false;
@@ -236,18 +284,20 @@ public class ChatService {
 
     private boolean containsRealTimeData(String content, String requiredTool) {
         if (content == null) return false;
-        if (requiredTool.contains("CurrentTime") || requiredTool.contains("getCurrentTime")) {
-            // Match explicit time formats
-            if (content.matches(".*\\d{1,2}[:：]\\d{2}([:：]\\d{2})?.*")) return true;
-            if (content.matches(".*\\d{4}[-/年]\\d{1,2}[-/月]\\d{1,2}.*")) return true;
-            if (content.matches(".*\\d{1,2}月\\d{1,2}[日号].*")) return true;
+        if (requiredTool.contains("getCurrentTime")) {
+            // Use Pattern.find() so multiline responses are handled correctly.
+            // String.matches() would fail on any content with newlines because .* skips \n by default.
+            if (Pattern.compile("\\d{1,2}[:：]\\d{2}").matcher(content).find()) return true;
+            if (Pattern.compile("\\d{4}[-/年]\\d{1,2}[-/月]\\d{1,2}").matcher(content).find()) return true;
+            if (Pattern.compile("\\d{1,2}月\\d{1,2}[日号]").matcher(content).find()) return true;
             if (content.contains("CST") || content.contains("UTC") || content.contains("GMT")
                     || content.contains("时区") || content.contains("标准时间")) return true;
-            if (content.matches(".*[上中下]午\\d{1,2}[点时].*")) return true;
-            if (content.matches(".*星期[一二三四五六日天].*")) return true;
+            if (Pattern.compile("[上中下]午\\d{1,2}[点时]").matcher(content).find()) return true;
+            if (Pattern.compile("星期[一二三四五六日天]").matcher(content).find()) return true;
+            if (Pattern.compile("20[2-9]\\d年").matcher(content).find()) return true;
         }
-        if (requiredTool.contains("Weather") || requiredTool.contains("getWeather")) {
-            if (content.matches(".*\\d+\\s*[°度].*")) return true;
+        if (requiredTool.contains("getWeather")) {
+            if (Pattern.compile("\\d+\\s*[°度]").matcher(content).find()) return true;
             if (content.contains("天气") || content.contains("温度") || content.contains("气温")
                     || content.contains("湿度") || content.contains("风速") || content.contains("风向")) return true;
         }
@@ -301,13 +351,23 @@ public class ChatService {
         } else {
             spec.tools(toolFunctions);
         }
-        Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
-        return new StreamContext(conv.getId(), content);
+        Flux<ChatResponse> flux = spec.stream().chatResponse();
+        return new StreamContext(conv.getId(), flux);
     }
 
     @Transactional
     public Message saveAssistantResponse(String conversationId, String content) {
+        return saveAssistantResponse(conversationId, content, null);
+    }
+
+    @Transactional
+    public Message saveAssistantResponse(String conversationId, String content, String reasoning) {
         Message saved = insertMessage(conversationId, "assistant", content);
+        if (reasoning != null && !reasoning.isBlank()) {
+            // Update the inserted message with reasoning content
+            saved.setReasoning(reasoning);
+            messageMapper.updateById(saved);
+        }
         // After the first exchange (1 user + 1 assistant), generate a title asynchronously
         Conversation conv = conversationService.getConversation(conversationId);
         if (conv.getMessages().size() == 2) {
@@ -371,8 +431,8 @@ public class ChatService {
         } else {
             spec.tools(toolFunctions);
         }
-        Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
-        return new StreamContext(conv.getId(), content);
+        Flux<ChatResponse> flux = spec.stream().chatResponse();
+        return new StreamContext(conv.getId(), flux);
     }
 
     public StreamContext regenerateStream(String conversationId, String userMessage, String model, boolean webSearch) {
@@ -391,9 +451,9 @@ public class ChatService {
         } else {
             spec.tools(toolFunctions);
         }
-        Flux<String> content = spec.stream().content().onErrorResume(e -> Flux.empty());
-        return new StreamContext(conv.getId(), content);
+        Flux<ChatResponse> flux = spec.stream().chatResponse();
+        return new StreamContext(conv.getId(), flux);
     }
 
-    public record StreamContext(String conversationId, Flux<String> content) {}
+    public record StreamContext(String conversationId, Flux<ChatResponse> flux) {}
 }

@@ -15,6 +15,7 @@ public class Conversation {
     private String id;
     private String title;
     private String systemPrompt;
+    private String shareToken;
 
     @TableField(exist = false)
     private List<Message> messages = new ArrayList<>();
@@ -37,6 +38,8 @@ public class Conversation {
     public void setTitle(String title) { this.title = title; }
     public String getSystemPrompt() { return systemPrompt; }
     public void setSystemPrompt(String systemPrompt) { this.systemPrompt = systemPrompt; }
+    public String getShareToken() { return shareToken; }
+    public void setShareToken(String shareToken) { this.shareToken = shareToken; }
     public List<Message> getMessages() { return messages; }
     public void setMessages(List<Message> messages) { this.messages = messages; }
     public LocalDateTime getCreatedAt() { return createdAt; }

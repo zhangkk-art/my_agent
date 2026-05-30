@@ -10,6 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
@@ -77,17 +79,36 @@ public class ChatController {
         try {
             ServletOutputStream out = resp.getOutputStream();
             StringBuilder fullContent = new StringBuilder();
+            StringBuilder fullReasoning = new StringBuilder();
             AtomicBoolean completed = new AtomicBoolean(false);
 
-            ctx.content().subscribe(
-                    chunk -> {
+            ctx.flux().subscribe(
+                    chatResponse -> {
                         if (completed.get()) return;
-                        fullContent.append(chunk);
                         try {
-                            String sse = "data: " + objectMapper.writeValueAsString(
-                                    Map.of("content", chunk)) + "\n\n";
-                            out.write(sse.getBytes(StandardCharsets.UTF_8));
-                            out.flush();
+                            // Extract reasoning and content from ChatResponse
+                            Generation gen = chatResponse.getResult();
+                            if (gen == null) return;
+                            var output = gen.getOutput();
+                            if (output == null) return;
+
+                            String reasoning = extractReasoning(gen);
+                            String content = output.getText();
+
+                            if (reasoning != null && !reasoning.isEmpty()) {
+                                fullReasoning.append(reasoning);
+                                String sse = "data: " + objectMapper.writeValueAsString(
+                                        Map.of("reasoning", reasoning)) + "\n\n";
+                                out.write(sse.getBytes(StandardCharsets.UTF_8));
+                                out.flush();
+                            }
+                            if (content != null && !content.isEmpty()) {
+                                fullContent.append(content);
+                                String sse = "data: " + objectMapper.writeValueAsString(
+                                        Map.of("content", content)) + "\n\n";
+                                out.write(sse.getBytes(StandardCharsets.UTF_8));
+                                out.flush();
+                            }
                         } catch (IOException e) {
                             log.warn("Client disconnected during stream for conversation {}", ctx.conversationId());
                             if (completed.compareAndSet(false, true)) {
@@ -96,9 +117,11 @@ public class ChatController {
                         }
                     },
                     error -> {
-                        if (fullContent.length() > 0) {
+                        if (fullContent.length() > 0 || fullReasoning.length() > 0) {
                             try {
-                                chatService.saveAssistantResponse(ctx.conversationId(), fullContent.toString());
+                                chatService.saveAssistantResponse(ctx.conversationId(),
+                                        fullContent.toString(),
+                                        fullReasoning.length() > 0 ? fullReasoning.toString() : null);
                             } catch (Exception e) {
                                 log.error("Failed to save partial assistant response for conversation {}", ctx.conversationId(), e);
                             }
@@ -120,7 +143,9 @@ public class ChatController {
                             String messageId = null;
                             if (fullContent.length() > 0) {
                                 Message saved = chatService.saveAssistantResponse(
-                                        ctx.conversationId(), fullContent.toString());
+                                        ctx.conversationId(),
+                                        fullContent.toString(),
+                                        fullReasoning.length() > 0 ? fullReasoning.toString() : null);
                                 messageId = saved.getId();
                             }
                             Map<String, Object> doneData = new HashMap<>();
@@ -143,5 +168,22 @@ public class ChatController {
             log.error("Failed to initialize SSE stream for conversation {}", ctx.conversationId(), e);
             asyncCtx.complete();
         }
+    }
+
+    /**
+     * Try to extract reasoning/thinking content from a Generation.
+     * Checks Generation metadata first, then ChatResponse-level metadata.
+     * Returns null if no reasoning content is available (most models don't provide it).
+     */
+    private String extractReasoning(Generation gen) {
+        if (gen == null) return null;
+        // Check Generation metadata — Spring AI stores reasoningContent here
+        if (gen.getMetadata() != null) {
+            Object r = gen.getMetadata().get("reasoningContent");
+            if (r != null && !r.toString().isEmpty()) {
+                return r.toString();
+            }
+        }
+        return null;
     }
 }

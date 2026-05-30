@@ -58,4 +58,32 @@ public class ConversationController {
         conversationService.deleteConversation(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/share")
+    public Map<String, String> shareConversation(@PathVariable String id) {
+        String token = conversationService.shareConversation(id);
+        return Map.of("shareToken", token);
+    }
+
+    @DeleteMapping("/{id}/share")
+    public ResponseEntity<Void> revokeShare(@PathVariable String id) {
+        conversationService.revokeShare(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+
+// Shared conversation — public endpoint (no /api prefix to avoid proxy)
+@RestController
+@RequestMapping("/api/shared")
+class SharedConversationController {
+    private final ConversationService conversationService;
+
+    SharedConversationController(ConversationService conversationService) {
+        this.conversationService = conversationService;
+    }
+
+    @GetMapping("/{token}")
+    public Conversation getSharedConversation(@PathVariable String token) {
+        return conversationService.getSharedConversation(token);
+    }
 }

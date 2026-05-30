@@ -76,7 +76,10 @@ public class ConversationService {
 
     @Transactional
     public Conversation renameConversation(String id, String title) {
-        Conversation conversation = getConversation(id);
+        Conversation conversation = conversationMapper.selectById(id);
+        if (conversation == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+        }
         conversation.setTitle(title);
         conversation.setUpdatedAt(LocalDateTime.now());
         conversationMapper.updateById(conversation);
@@ -161,6 +164,12 @@ public class ConversationService {
             }
         }
 
+        // Reload after deleting the assistant message so the user-message scan
+        // reflects the current DB state and finds the correct preceding user message.
+        messages = messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conversationId)
+                        .orderByAsc(Message::getCreatedAt));
         for (int i = messages.size() - 1; i >= 0; i--) {
             if ("user".equals(messages.get(i).getRole())) {
                 messageMapper.deleteById(messages.get(i).getId());
@@ -180,5 +189,58 @@ public class ConversationService {
         conversationMapper.updateById(conv);
 
         return getConversation(conv.getId());
+    }
+
+    /**
+     * Generate a share token for a conversation. Returns the existing token if already shared.
+     */
+    @Transactional
+    public String shareConversation(String id) {
+        Conversation conv = conversationMapper.selectById(id);
+        if (conv == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+        }
+        if (conv.getShareToken() != null && !conv.getShareToken().isBlank()) {
+            return conv.getShareToken();
+        }
+        String token = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        conv.setShareToken(token);
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conv);
+        return token;
+    }
+
+    /**
+     * Revoke a share token, making the conversation private again.
+     */
+    @Transactional
+    public void revokeShare(String id) {
+        Conversation conv = conversationMapper.selectById(id);
+        if (conv == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+        }
+        conv.setShareToken(null);
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conv);
+    }
+
+    /**
+     * Get a conversation by its share token (public access).
+     */
+    public Conversation getSharedConversation(String token) {
+        List<Conversation> list = conversationMapper.selectList(
+                new LambdaQueryWrapper<Conversation>()
+                        .eq(Conversation::getShareToken, token));
+        if (list.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Shared conversation not found or has been revoked");
+        }
+        Conversation conv = list.get(0);
+        List<Message> messages = messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conv.getId())
+                        .orderByAsc(Message::getCreatedAt)
+                        .last("LIMIT " + MAX_MESSAGES));
+        conv.setMessages(messages);
+        return conv;
     }
 }
