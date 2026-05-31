@@ -230,3 +230,32 @@ export async function deletePromptTemplate(id) {
   const res = await fetch(`${BASE_URL}/prompt-templates/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete template');
 }
+
+// ── Knowledge Base ──
+
+export async function uploadKnowledgeDocument(file) {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${BASE_URL}/knowledge/documents`, {
+    method: 'POST',
+    body: form
+  });
+  if (!res.ok) throw new Error('Failed to upload document');
+  return res.json();
+}
+
+export async function getKnowledgeDocuments() {
+  const res = await fetch(`${BASE_URL}/knowledge/documents`);
+  if (!res.ok) throw new Error('Failed to fetch knowledge documents');
+  return res.json();
+}
+
+export async function deleteKnowledgeDocument(id) {
+  const res = await fetch(`${BASE_URL}/knowledge/documents/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete document');
+}
+
+export function ragChatStream(conversationId, message, model, onChunk, onDone, onError, signal) {
+  streamSse(`${BASE_URL}/knowledge/chat`, { conversationId, message, model },
+    () => {}, onChunk, onDone, onError, signal);
+}

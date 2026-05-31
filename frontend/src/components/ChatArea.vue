@@ -118,6 +118,27 @@
         @editMessage="(id, content) => $emit('editMessage', id, content)"
         @deleteMessage="id => $emit('deleteMessage', id)"
       />
+      <!-- Knowledge base status bar -->
+      <div class="kb-bar">
+        <input
+          ref="kbFileInput"
+          type="file"
+          accept=".pdf,.docx,.md,.txt,.html,.doc"
+          class="kb-file-input-hidden"
+          @change="onKbFileChange"
+        />
+        <button class="kb-btn" title="上传文档到知识库" @click="kbFileInput.click()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+        </button>
+        <span class="kb-label" v-if="kbDocs.length === 0">知识库为空，点击上传文档</span>
+        <span class="kb-label" v-else>📚 {{ kbDocs.length }} 篇文档 · {{ kbChunkCount }} 个片段</span>
+        <button v-if="kbDocs.length > 0" class="kb-delete-all" title="清空知识库" @click="clearKnowledgeBase">清空</button>
+      </div>
       <ChatInput
         ref="chatInputRef"
         :disabled="loading"
@@ -245,6 +266,40 @@ function copyShareUrl() {
 const promptModalOpen = ref(false)
 const promptDraft = ref('')
 const templateList = ref([])
+
+// ── Knowledge Base ──
+const kbFileInput = ref(null)
+const kbDocs = ref([])
+const kbChunkCount = computed(() => kbDocs.value.reduce((s, d) => s + (d.chunkCount || 0), 0))
+
+function refreshKnowledgeBase() {
+  api.getKnowledgeDocuments().then(list => {
+    kbDocs.value = list
+  }).catch(() => {})
+}
+refreshKnowledgeBase()
+
+async function onKbFileChange(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  try {
+    await api.uploadKnowledgeDocument(file)
+    refreshKnowledgeBase()
+    emit('toast', { message: `已上传：${file.name}`, type: 'success' })
+  } catch (err) {
+    emit('toast', { message: `上传失败：${err.message}`, type: 'error' })
+  } finally {
+    e.target.value = ''
+  }
+}
+
+async function clearKnowledgeBase() {
+  if (!window.confirm('确定清空整个知识库？所有上传的文档将被删除。')) return
+  for (const d of kbDocs.value) {
+    try { await api.deleteKnowledgeDocument(d.id) } catch {}
+  }
+  kbDocs.value = []
+}
 
 function loadTemplates() {
   // Read from localStorage cache first for fast open
@@ -672,5 +727,49 @@ function doExport(format) {
 .btn-revoke-share:hover {
   color: var(--danger);
   background: rgba(224, 85, 106, 0.08);
+}
+
+/* ── Knowledge Base Bar ── */
+.kb-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 24px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.kb-file-input-hidden {
+  display: none;
+}
+.kb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+.kb-btn:hover {
+  background: var(--accent);
+  color: white;
+}
+.kb-label {
+  flex: 1;
+}
+.kb-delete-all {
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+.kb-delete-all:hover {
+  color: var(--danger);
 }
 </style>
