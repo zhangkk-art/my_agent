@@ -109,6 +109,27 @@
     </div>
 
     <WelcomeScreen v-if="!conversation" @send="$emit('send', $event)" />
+    <!-- Knowledge base status bar — always visible -->
+    <div class="kb-bar">
+      <input
+        ref="kbFileInput"
+        type="file"
+        accept=".pdf,.docx,.md,.txt,.html,.doc"
+        class="kb-file-input-hidden"
+        @change="onKbFileChange"
+      />
+      <button class="kb-btn" title="上传文档到知识库" @click="kbFileInput.click()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+      </button>
+      <span class="kb-label" v-if="kbDocs.length === 0">知识库为空，点击上传文档</span>
+      <span class="kb-label" v-else>📚 {{ kbDocs.length }} 篇文档 · {{ kbChunkCount }} 个片段</span>
+      <button v-if="kbDocs.length > 0" class="kb-delete-all" title="清空知识库" @click="clearKnowledgeBase">清空</button>
+    </div>
     <template v-else>
       <MessageList
         :messages="conversation.messages || []"
@@ -118,27 +139,6 @@
         @editMessage="(id, content) => $emit('editMessage', id, content)"
         @deleteMessage="id => $emit('deleteMessage', id)"
       />
-      <!-- Knowledge base status bar -->
-      <div class="kb-bar">
-        <input
-          ref="kbFileInput"
-          type="file"
-          accept=".pdf,.docx,.md,.txt,.html,.doc"
-          class="kb-file-input-hidden"
-          @change="onKbFileChange"
-        />
-        <button class="kb-btn" title="上传文档到知识库" @click="kbFileInput.click()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="12" y1="18" x2="12" y2="12"/>
-            <line x1="9" y1="15" x2="15" y2="15"/>
-          </svg>
-        </button>
-        <span class="kb-label" v-if="kbDocs.length === 0">知识库为空，点击上传文档</span>
-        <span class="kb-label" v-else>📚 {{ kbDocs.length }} 篇文档 · {{ kbChunkCount }} 个片段</span>
-        <button v-if="kbDocs.length > 0" class="kb-delete-all" title="清空知识库" @click="clearKnowledgeBase">清空</button>
-      </div>
       <ChatInput
         ref="chatInputRef"
         :disabled="loading"
