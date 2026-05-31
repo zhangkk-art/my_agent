@@ -153,7 +153,7 @@ const props = defineProps({
   voiceLang: { type: String, default: 'zh-CN' }
 })
 
-const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'update:model', 'updateSystemPrompt'])
+const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'update:model', 'updateSystemPrompt', 'toast'])
 
 const open = ref(false)
 const exportOpen = ref(false)
@@ -215,6 +215,7 @@ async function doShare() {
     sharePopOpen.value = true
   } catch (e) {
     console.error('Share failed:', e)
+    emit('toast', { message: '分享失败，请重试', type: 'error' })
   }
 }
 
@@ -230,6 +231,7 @@ async function doRevokeShare() {
     closeShare()
   } catch (e) {
     console.error('Revoke share failed:', e)
+    emit('toast', { message: '取消分享失败，请重试', type: 'error' })
   }
 }
 

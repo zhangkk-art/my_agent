@@ -5,6 +5,8 @@ import com.myagent.model.*;
 import com.myagent.service.ChatService;
 import com.myagent.service.ConversationService;
 import jakarta.servlet.AsyncContext;
+import jakarta.servlet.AsyncListener;
+import jakarta.servlet.AsyncEvent;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,12 +16,14 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.Disposable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RestController
 @RequestMapping("/api")
@@ -82,7 +86,8 @@ public class ChatController {
             StringBuilder fullReasoning = new StringBuilder();
             AtomicBoolean completed = new AtomicBoolean(false);
 
-            ctx.flux().subscribe(
+            AtomicReference<Disposable> subRef = new AtomicReference<>();
+            subRef.set(ctx.flux().subscribe(
                     chatResponse -> {
                         if (completed.get()) return;
                         try {
@@ -111,12 +116,14 @@ public class ChatController {
                             }
                         } catch (IOException e) {
                             log.warn("Client disconnected during stream for conversation {}", ctx.conversationId());
+                            dispose(subRef);
                             if (completed.compareAndSet(false, true)) {
                                 asyncCtx.complete();
                             }
                         }
                     },
                     error -> {
+                        dispose(subRef);
                         if (fullContent.length() > 0 || fullReasoning.length() > 0) {
                             try {
                                 chatService.saveAssistantResponse(ctx.conversationId(),
@@ -163,10 +170,29 @@ public class ChatController {
                             asyncCtx.complete();
                         }
                     }
-            );
+            ));
+
+            // Cancel the LLM subscription when the client disconnects or times out
+            asyncCtx.addListener(new AsyncListener() {
+                @Override public void onTimeout(AsyncEvent event) {
+                    dispose(subRef);
+                }
+                @Override public void onError(AsyncEvent event) {
+                    dispose(subRef);
+                }
+                @Override public void onComplete(AsyncEvent event) {}
+                @Override public void onStartAsync(AsyncEvent event) {}
+            });
         } catch (IOException e) {
             log.error("Failed to initialize SSE stream for conversation {}", ctx.conversationId(), e);
             asyncCtx.complete();
+        }
+    }
+
+    private static void dispose(AtomicReference<Disposable> ref) {
+        Disposable d = ref.get();
+        if (d != null && !d.isDisposed()) {
+            d.dispose();
         }
     }
 

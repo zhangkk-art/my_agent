@@ -13,12 +13,20 @@ function streamSse(url, body, onReasoning, onChunk, onDone, onError, signal) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let finished = false;  // guard against double onDone
+
+    function finish(messageId) {
+      if (finished) return;
+      finished = true;
+      try { reader.cancel(); } catch {}
+      onDone(messageId);
+    }
 
     async function read() {
       try {
         const { done, value } = await reader.read();
         if (done) {
-          onDone();
+          finish();
           return;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -34,7 +42,7 @@ function streamSse(url, body, onReasoning, onChunk, onDone, onError, signal) {
           if (line.startsWith('data: ')) {
             const data = line.substring(6);
             if (data === '[DONE]') {
-              onDone();
+              finish();
               return;
             }
             try {
@@ -44,7 +52,7 @@ function streamSse(url, body, onReasoning, onChunk, onDone, onError, signal) {
                 return;
               }
               if (parsed.done) {
-                onDone(parsed.messageId);
+                finish(parsed.messageId);
                 return;
               }
               if (parsed.reasoning) {
@@ -56,14 +64,14 @@ function streamSse(url, body, onReasoning, onChunk, onDone, onError, signal) {
                 await new Promise(r => requestAnimationFrame(r));
               }
             } catch (e) {
-              // skip parse errors
+              console.warn('SSE parse error:', e.message, 'data:', data.substring(0, 100))
             }
           }
         }
         read();
       } catch (err) {
         if (err.name === 'AbortError') {
-          onDone();
+          finish();
         } else {
           onError(err);
         }
