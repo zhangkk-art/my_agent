@@ -1,26 +1,25 @@
 package com.myagent.rag.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.*;
-import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import co.elastic.clients.json.JsonData;
 import com.myagent.rag.mapper.KnowledgeDocumentMapper;
 import com.myagent.rag.model.KnowledgeDocument;
-import com.myagent.service.ChatService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -37,6 +36,9 @@ public class KnowledgeService {
     private final EmbeddingModel embeddingModel;
     private final DocumentParserService parserService;
     private final KnowledgeDocumentMapper docMapper;
+
+    @Value("${app.elasticsearch.kb-dir:./knowledge-base}")
+    private String kbDirPath;
 
     public KnowledgeService(ElasticsearchClient es,
                             EmbeddingModel embeddingModel,
@@ -70,43 +72,85 @@ public class KnowledgeService {
                 es.indices().create(req);
                 log.info("Elasticsearch index '{}' created", INDEX_NAME);
             }
+            // Auto-load documents from kb-dir on startup
+            loadFromDirectory();
         } catch (Exception e) {
             log.error("Failed to initialize ES index '{}': {}", INDEX_NAME, e.getMessage());
         }
     }
 
+    /**
+     * Scan the configured kb-dir and index all supported documents.
+     * Skips files that are already indexed (by name).
+     */
+    public void loadFromDirectory() {
+        Path dir = Paths.get(kbDirPath);
+        if (!Files.isDirectory(dir)) {
+            try {
+                Files.createDirectories(dir);
+                log.info("Knowledge base directory created: {}", dir.toAbsolutePath());
+            } catch (IOException e) {
+                log.warn("Cannot create kb-dir '{}': {}", kbDirPath, e.getMessage());
+            }
+            return;
+        }
+        // Get already-indexed document names
+        Set<String> indexed = docMapper.selectList(null).stream()
+                .map(KnowledgeDocument::getName)
+                .collect(Collectors.toSet());
+
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+            for (Path path : stream) {
+                if (Files.isDirectory(path)) continue;
+                String name = path.getFileName().toString();
+                if (indexed.contains(name)) {
+                    log.debug("Skipping already indexed: {}", name);
+                    continue;
+                }
+                try (InputStream in = Files.newInputStream(path)) {
+                    String contentType = Files.probeContentType(path);
+                    if (contentType == null) contentType = "application/octet-stream";
+                    uploadDocument(name, contentType, Files.size(path), in);
+                    indexed.add(name);
+                } catch (Exception e) {
+                    log.error("Failed to index file '{}': {}", name, e.getMessage());
+                }
+            }
+        } catch (IOException e) {
+            log.error("Failed to scan kb-dir '{}': {}", kbDirPath, e.getMessage());
+        }
+    }
+
+    /**
+     * Index a single document from an InputStream. Used by the controller
+     * (multipart upload) and by loadFromDirectory().
+     */
     @Transactional
-    public KnowledgeDocument uploadDocument(MultipartFile file) throws Exception {
-        // 1. Parse document to raw text
-        String text = parserService.parseToString(file.getInputStream(), file.getOriginalFilename());
+    public KnowledgeDocument uploadDocument(String fileName, String contentType, long fileSize, InputStream in) throws Exception {
+        String text = parserService.parseToString(in, fileName);
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("Document contains no extractable text");
         }
 
-        // 2. Chunk text
         List<String> chunks = parserService.chunkText(text);
         if (chunks.isEmpty()) {
             throw new IllegalArgumentException("Document is too short to chunk");
         }
 
-        // 3. Embed all chunks
         List<float[]> embeddings = new ArrayList<>();
         for (String chunk : chunks) {
-            float[] vec = embeddingModel.embed(chunk);
-            embeddings.add(vec);
+            embeddings.add(embeddingModel.embed(chunk));
         }
 
-        // 4. Save document record to MySQL
         KnowledgeDocument doc = new KnowledgeDocument();
         doc.setId(UUID.randomUUID().toString());
-        doc.setName(file.getOriginalFilename());
-        doc.setContentType(file.getContentType());
-        doc.setFileSize(file.getSize());
+        doc.setName(fileName);
+        doc.setContentType(contentType);
+        doc.setFileSize(fileSize);
         doc.setChunkCount(chunks.size());
         doc.setCreatedAt(LocalDateTime.now());
         docMapper.insert(doc);
 
-        // 5. Bulk index to ES
         BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
         for (int i = 0; i < chunks.size(); i++) {
             Map<String, Object> chunkDoc = new LinkedHashMap<>();
@@ -116,18 +160,19 @@ public class KnowledgeService {
             chunkDoc.put("text", chunks.get(i));
             chunkDoc.put("embedding", toDoubleList(embeddings.get(i)));
             chunkDoc.put("created_at", LocalDateTime.now().toString());
-
             final int idx = i;
             bulkBuilder.operations(op -> op
-                    .index(ix -> ix
-                            .index(INDEX_NAME)
-                            .id(doc.getId() + "_" + idx)
-                            .document(chunkDoc)));
+                    .index(ix -> ix.index(INDEX_NAME).id(doc.getId() + "_" + idx).document(chunkDoc)));
         }
         es.bulk(bulkBuilder.build());
-        log.info("Document '{}' indexed: {} chunks", doc.getName(), chunks.size());
-
+        log.info("Indexed: {} ({} chunks)", doc.getName(), chunks.size());
         return doc;
+    }
+
+    // Keep old signature for backward compat with multipart controller
+    @Transactional
+    public KnowledgeDocument uploadDocument(MultipartFile file) throws Exception {
+        return uploadDocument(file.getOriginalFilename(), file.getContentType(), file.getSize(), file.getInputStream());
     }
 
     public List<KnowledgeDocument> listDocuments() {
