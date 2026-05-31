@@ -19,10 +19,45 @@
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
           </button>
-          <div v-if="exportOpen" class="export-dropdown">
-            <div class="export-option" @click="doExport('md')">导出为 Markdown</div>
-            <div class="export-option" @click="doExport('txt')">导出为 TXT</div>
-          </div>
+          <Transition name="drop">
+            <div v-if="exportOpen" class="export-dropdown">
+              <div class="export-option" @click="doExport('md')">导出为 Markdown</div>
+              <div class="export-option" @click="doExport('txt')">导出为 TXT</div>
+            </div>
+          </Transition>
+        </div>
+        <!-- Share button + popup -->
+        <div v-if="conversation" class="share-wrapper">
+          <button
+            class="btn-icon-sm"
+            :class="{ 'btn-shared-active': sharePopOpen }"
+            title="分享对话"
+            @click="doShare"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+          </button>
+          <Transition name="drop">
+            <div v-if="sharePopOpen" class="share-popup">
+              <div class="share-popup-title">分享链接已生成</div>
+              <div class="share-url-row">
+                <input ref="shareUrlInput" class="share-url-input" :value="shareUrl" readonly @focus="$event.target.select()" />
+                <button class="btn-copy-url" @click="copyShareUrl">复制</button>
+              </div>
+              <div v-if="lanUrl" class="share-lan-hint">
+                局域网访问：<code>{{ lanUrl }}</code>
+                <button class="btn-copy-lan" @click="copyLanUrl">复制</button>
+              </div>
+              <div class="share-popup-actions">
+                <button class="btn-revoke-share" @click="doRevokeShare">取消分享</button>
+              </div>
+            </div>
+          </Transition>
         </div>
         <!-- Model picker -->
         <div class="model-picker">
@@ -32,7 +67,8 @@
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </button>
-          <div v-if="open" class="model-dropdown">
+          <Transition name="drop">
+            <div v-if="open" class="model-dropdown">
             <div class="model-option" :class="{ active: model === 'deepseek' }" @click="select('deepseek')">
               <div class="model-option-name">DeepSeek</div>
               <div class="model-option-desc">DeepSeek Chat</div>
@@ -42,9 +78,10 @@
               <div class="model-option-desc">通义千问 Plus</div>
             </div>
           </div>
+          </Transition>
         </div>
       </div>
-      <div v-if="open || exportOpen" class="top-bar-overlay" @click="open = false; exportOpen = false"></div>
+      <div v-if="open || exportOpen || sharePopOpen" class="top-bar-overlay" @click="open = false; exportOpen = false; closeShare()"></div>
     </div>
 
     <!-- System prompt modal -->
@@ -52,6 +89,17 @@
       <div class="modal-box">
         <div class="modal-title">自定义系统提示词</div>
         <p class="modal-hint">留空则使用默认提示词（小凯角色）</p>
+        <div v-if="templateList.length > 0" class="template-select-row">
+          <select
+            class="template-select"
+            @change="onTemplateSelect"
+          >
+            <option value="">— 选择模板 —</option>
+            <option v-for="t in templateList" :key="t.id" :value="t.content">
+              {{ t.name }}
+            </option>
+          </select>
+        </div>
         <textarea v-model="promptDraft" class="prompt-textarea" rows="8" placeholder="在此输入系统提示词..."></textarea>
         <div class="modal-actions">
           <button class="btn-modal-cancel" @click="promptModalOpen = false">取消</button>
@@ -71,8 +119,11 @@
         @deleteMessage="id => $emit('deleteMessage', id)"
       />
       <ChatInput
+        ref="chatInputRef"
         :disabled="loading"
         :loading="loading"
+        :enterToSend="enterToSend"
+        :voiceLang="voiceLang"
         @send="(msg, imgs, ws) => $emit('send', msg, imgs, ws)"
         @stop="$emit('stop')"
       />
@@ -81,24 +132,130 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import WelcomeScreen from './WelcomeScreen.vue'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
+import * as api from '../api/index.js'
+
+const chatInputRef = ref(null)
+function focusInput() {
+  chatInputRef.value?.focus()
+}
+defineExpose({ focusInput })
 
 const props = defineProps({
   conversation: Object,
   loading: Boolean,
   conversationLoading: Boolean,
-  model: String
+  model: String,
+  enterToSend: { type: Boolean, default: true },
+  voiceLang: { type: String, default: 'zh-CN' }
 })
 
 const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'update:model', 'updateSystemPrompt'])
 
 const open = ref(false)
 const exportOpen = ref(false)
+// shareToken is a temporary ref — set briefly when sharing to show the popup URL,
+// cleared when popup closes so the button returns to gray.
+const shareToken = ref(null)
+const sharePopOpen = ref(false)
+const shareUrlInput = ref(null)
+
+const shareUrl = computed(() => {
+  if (!shareToken.value) return ''
+  return window.location.origin + '/share/' + shareToken.value
+})
+
+// Detect LAN IP for sharing hint (when on localhost)
+const lanUrl = ref('')
+function detectLanIp() {
+  // Only show LAN hint if user is on localhost
+  if (!window.location.hostname.includes('localhost') && window.location.hostname !== '127.0.0.1') return
+  // Try WebRTC to get LAN IP (works in Chrome/Firefox)
+  try {
+    const pc = new RTCPeerConnection({ iceServers: [] })
+    pc.createDataChannel('')
+    pc.createOffer().then(offer => pc.setLocalDescription(offer))
+    pc.onicecandidate = (e) => {
+      if (!e.candidate) return
+      const ip = e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/)?.[1]
+      if (ip && !ip.startsWith('127.') && ip.split('.')[0] !== '0') {
+        lanUrl.value = window.location.protocol + '//' + ip + ':' + window.location.port + '/share/' + shareToken.value
+      }
+      pc.close()
+    }
+  } catch { /* WebRTC not supported */ }
+}
+
+function copyLanUrl() {
+  navigator.clipboard.writeText(lanUrl.value)
+}
+
+// Trigger LAN detection after share
+watch(shareToken, (token) => {
+  if (token) {
+    setTimeout(detectLanIp, 500)
+  } else {
+    lanUrl.value = ''
+  }
+})
+
+// Close share popup when switching conversations
+watch(() => props.conversation, () => {
+  closeShare()
+})
+
+async function doShare() {
+  if (!props.conversation) return
+  try {
+    const result = await api.shareConversation(props.conversation.id)
+    shareToken.value = result.shareToken
+    sharePopOpen.value = true
+  } catch (e) {
+    console.error('Share failed:', e)
+  }
+}
+
+function closeShare() {
+  sharePopOpen.value = false
+  shareToken.value = null
+}
+
+async function doRevokeShare() {
+  if (!props.conversation) return
+  try {
+    await api.revokeShare(props.conversation.id)
+    closeShare()
+  } catch (e) {
+    console.error('Revoke share failed:', e)
+  }
+}
+
+function copyShareUrl() {
+  if (shareUrlInput.value) {
+    shareUrlInput.value.select()
+    navigator.clipboard.writeText(shareUrl.value)
+  }
+}
+
 const promptModalOpen = ref(false)
 const promptDraft = ref('')
+const templateList = ref([])
+
+function loadTemplates() {
+  // Read from localStorage cache first for fast open
+  const cached = localStorage.getItem('prompt-templates-cache')
+  if (cached) {
+    try { templateList.value = JSON.parse(cached) } catch {}
+  }
+  // Refresh from API in background
+  api.getPromptTemplates().then(list => {
+    templateList.value = list
+    localStorage.setItem('prompt-templates-cache', JSON.stringify(list))
+  }).catch(() => {})
+}
 
 function select(m) {
   emit('update:model', m)
@@ -107,7 +264,15 @@ function select(m) {
 
 function openPromptModal() {
   promptDraft.value = props.conversation?.systemPrompt || ''
+  loadTemplates()
   promptModalOpen.value = true
+}
+
+function onTemplateSelect(e) {
+  if (e.target.value) {
+    promptDraft.value = e.target.value
+    e.target.value = ''
+  }
 }
 
 function savePrompt() {
@@ -262,6 +427,26 @@ function doExport(format) {
   }
 }
 
+/* ── Template selector in prompt modal ── */
+.template-select-row {
+  margin-bottom: 10px;
+}
+.template-select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.template-select:focus {
+  border-color: var(--accent);
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -370,5 +555,120 @@ function doExport(format) {
 .export-option:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* Dropdown transition */
+.drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.drop-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
+.drop-enter-from, .drop-leave-to { opacity: 0; transform: translateY(-4px) scale(0.97); }
+
+/* Share */
+.share-wrapper {
+  position: relative;
+}
+.btn-shared-active {
+  color: #22c55e !important;
+  border-color: #22c55e !important;
+}
+.share-popup {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  min-width: 320px;
+  z-index: 20;
+}
+.share-popup-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+.share-url-row {
+  display: flex;
+  gap: 6px;
+}
+.share-url-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: text;
+}
+.share-url-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.btn-copy-url {
+  padding: 6px 12px;
+  background: var(--accent);
+  color: white;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.btn-copy-url:hover {
+  background: var(--accent-hover);
+}
+.share-lan-hint {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.share-lan-hint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-card);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  word-break: break-all;
+  flex: 1;
+  min-width: 0;
+}
+.btn-copy-lan {
+  padding: 3px 10px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-radius: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.btn-copy-lan:hover {
+  background: var(--border-color);
+}
+.share-popup-actions {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+}
+.btn-revoke-share {
+  padding: 4px 12px;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 5px;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+.btn-revoke-share:hover {
+  color: var(--danger);
+  background: rgba(224, 85, 106, 0.08);
 }
 </style>

@@ -1,20 +1,32 @@
 <template>
-  <div class="app-layout">
+  <!-- Shared conversation view -->
+  <SharedView v-if="sharedMode" :conversation="sharedConversation" :loading="sharedLoading" />
+  <!-- Normal app layout -->
+  <div v-else class="app-layout">
     <div v-if="sidebarRef?.sidebarOpen" class="sidebar-overlay" @click="sidebarRef.sidebarOpen = false"></div>
     <Sidebar
       ref="sidebarRef"
       :conversations="conversations"
       :activeId="activeConversationId"
+      :width="sidebarWidth"
       @select="selectConversation"
       @new="newConversation"
       @delete="handleDeleteConversation"
       @rename="handleRenameConversation"
+      @openSettings="showSettings = true"
     />
+    <div
+      class="resize-handle"
+      @mousedown="startResize"
+    ></div>
     <ChatArea
+      ref="chatAreaRef"
       :conversation="currentConversation"
       :loading="loading"
       :conversationLoading="conversationLoading"
       :model="selectedModel"
+      :enterToSend="settings.enterToSend"
+      :voiceLang="settings.voiceLang"
       @send="handleSendMessage"
       @stop="stopStream"
       @regenerate="regenerateMessage"
@@ -31,16 +43,47 @@
         </button>
       </template>
     </ChatArea>
+    <Transition name="modal">
+      <SettingsModal
+        v-if="showSettings"
+        :modelValue="settings"
+        @close="showSettings = false"
+        @update="handleSettingsUpdate"
+        @clearAll="handleClearAll"
+      />
+    </Transition>
     <Toast ref="toastRef" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
 import Toast from './components/Toast.vue'
+import SettingsModal from './components/SettingsModal.vue'
+import SharedView from './components/SharedView.vue'
 import * as api from './api/index.js'
+
+const DEFAULT_SETTINGS = {
+  fontSize: 'medium',
+  defaultModel: 'deepseek',
+  enterToSend: true,
+  voiceLang: 'zh-CN',
+}
+const FONT_SIZE_MAP = { small: '13px', medium: '14px', large: '16px' }
+
+function loadSettings() {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('app-settings') || '{}') }
+  } catch {
+    return { ...DEFAULT_SETTINGS }
+  }
+}
+
+function applyFontSize(size) {
+  document.documentElement.style.setProperty('--base-font-size', FONT_SIZE_MAP[size] || '14px')
+}
 
 const conversations = ref([])
 const activeConversationId = ref(null)
@@ -48,8 +91,62 @@ const loading = ref(false)
 const conversationLoading = ref(false)
 const abortController = ref(null)
 const sidebarRef = ref(null)
+const chatAreaRef = ref(null)
 const toastRef = ref(null)
 const selectedModel = ref(localStorage.getItem('model') || 'deepseek')
+const showSettings = ref(false)
+const settings = ref(loadSettings())
+
+// ── Resizable sidebar ──
+const SIDEBAR_MIN = 200
+const SIDEBAR_MAX = 500
+const sidebarWidth = ref(Number(localStorage.getItem('sidebarWidth')) || 280)
+let resizing = false
+
+function startResize(e) {
+  resizing = true
+  document.addEventListener('mousemove', onResize)
+  document.addEventListener('mouseup', stopResize)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
+
+function onResize(e) {
+  if (!resizing) return
+  const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, e.clientX))
+  sidebarWidth.value = w
+}
+
+function stopResize() {
+  resizing = false
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  localStorage.setItem('sidebarWidth', sidebarWidth.value)
+}
+
+// ── Shared conversation mode ──
+const sharedMode = ref(false)
+const sharedConversation = ref(null)
+const sharedLoading = ref(true)
+
+// Detect ?share=<token> in URL
+const urlParams = new URLSearchParams(window.location.search)
+const shareToken = urlParams.get('share')
+if (shareToken) {
+  sharedMode.value = true
+  sharedLoading.value = true
+  api.getSharedConversation(shareToken).then(conv => {
+    sharedConversation.value = conv
+    document.title = conv.title + ' - Shared from Ayer'
+  }).catch(() => {
+    sharedConversation.value = null
+  }).finally(() => {
+    sharedLoading.value = false
+  })
+}
 
 const currentConversation = computed(() => {
   if (!activeConversationId.value) return null
@@ -62,6 +159,7 @@ watch(currentConversation, (conv) => {
 })
 
 onMounted(async () => {
+  applyFontSize(settings.value.fontSize)
   try {
     conversations.value = await api.getConversations()
   } catch (e) {
@@ -91,6 +189,7 @@ async function selectConversation(id) {
     toastRef.value?.show('加载会话失败', 'error')
   } finally {
     conversationLoading.value = false
+    nextTick(() => chatAreaRef.value?.focusInput())
   }
 }
 
@@ -173,10 +272,20 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
       conversationId,
       role: 'assistant',
       content: '',
+      reasoning: '',
       createdAt: new Date().toISOString()
     })
   }
 
+  const onReasoning = (reasoning) => {
+    const c = conversations.value.find(c => c.id === conversationId)
+    if (c && c.messages.length > 0) {
+      const lastMsg = c.messages[c.messages.length - 1]
+      if (lastMsg.role === 'assistant') {
+        lastMsg.reasoning = (lastMsg.reasoning || '') + reasoning
+      }
+    }
+  }
   const onChunk = (content) => {
     const c = conversations.value.find(c => c.id === conversationId)
     if (c && c.messages.length > 0) {
@@ -189,20 +298,25 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
   const onDone = (messageId) => {
     loading.value = false
     abortController.value = null
-    const c = conversations.value.find(c => c.id === conversationId)
-    if (messageId && c) {
-      const lastMsg = c.messages[c.messages.length - 1]
-      if (lastMsg && lastMsg.id.startsWith('streaming-')) {
-        lastMsg.id = messageId
+    if (messageId) {
+      const c = conversations.value.find(c => c.id === conversationId)
+      if (c) {
+        const lastMsg = c.messages[c.messages.length - 1]
+        if (lastMsg && lastMsg.id.startsWith('streaming-')) {
+          lastMsg.id = messageId
+        }
       }
+      // Only refresh from server on normal completion; on abort, keep local state
+      api.getConversations().then(list => {
+        if (!loading.value) conversations.value = list
+      })
     }
-    api.getConversations().then(list => {
-      if (!loading.value) conversations.value = list
-    })
   }
   const onError = (error) => {
     loading.value = false
     abortController.value = null
+    // AbortError is expected when user clicks stop — keep streamed content, no toast
+    if (error.name === 'AbortError') return
     toastRef.value?.show('流式响应出错: ' + error.message, 'error')
     const c = conversations.value.find(c => c.id === conversationId)
     if (c) {
@@ -215,10 +329,10 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
 
   if (images.length > 0) {
     api.sendImageStream(conversationId, message, selectedModel.value, images, webSearch,
-      onChunk, onDone, onError, controller.signal)
+      onReasoning, onChunk, onDone, onError, controller.signal)
   } else {
     api.sendMessageStream(conversationId, message, selectedModel.value, webSearch,
-      onChunk, onDone, onError, controller.signal)
+      onReasoning, onChunk, onDone, onError, controller.signal)
   }
 }
 
@@ -263,6 +377,7 @@ function regenerateMessage() {
     conversationId: activeConversationId.value,
     role: 'assistant',
     content: '',
+    reasoning: '',
     createdAt: new Date().toISOString()
   })
 
@@ -270,6 +385,13 @@ function regenerateMessage() {
     activeConversationId.value,
     lastUserContent,
     selectedModel.value,
+    // onReasoning
+    (reasoning) => {
+      const lastMsg = conv.messages[conv.messages.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant') {
+        lastMsg.reasoning = (lastMsg.reasoning || '') + reasoning
+      }
+    },
     // onChunk
     (content) => {
       const lastMsg = conv.messages[conv.messages.length - 1]
@@ -286,15 +408,16 @@ function regenerateMessage() {
         if (lastMsg && lastMsg.id.startsWith('streaming-')) {
           lastMsg.id = messageId
         }
+        api.getConversations().then(list => {
+          if (!loading.value) conversations.value = list
+        })
       }
-      api.getConversations().then(list => {
-        if (!loading.value) conversations.value = list
-      })
     },
     // onError
     (error) => {
       loading.value = false
       abortController.value = null
+      if (error.name === 'AbortError') return
       toastRef.value?.show('重新生成失败: ' + error.message, 'error')
       const lastMsg = conv.messages[conv.messages.length - 1]
       if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content) {
@@ -338,6 +461,7 @@ async function handleEditMessage(messageId, newContent) {
       conversationId: activeConversationId.value,
       role: 'assistant',
       content: '',
+      reasoning: '',
       createdAt: new Date().toISOString()
     })
 
@@ -345,6 +469,10 @@ async function handleEditMessage(messageId, newContent) {
       activeConversationId.value,
       updated.content,
       selectedModel.value,
+      (reasoning) => {
+        const lastMsg = conv.messages[conv.messages.length - 1]
+        if (lastMsg?.role === 'assistant') lastMsg.reasoning = (lastMsg.reasoning || '') + reasoning
+      },
       (content) => {
         const lastMsg = conv.messages[conv.messages.length - 1]
         if (lastMsg?.role === 'assistant') lastMsg.content += content
@@ -355,14 +483,15 @@ async function handleEditMessage(messageId, newContent) {
         if (newMsgId) {
           const lastMsg = conv.messages[conv.messages.length - 1]
           if (lastMsg?.id.startsWith('streaming-')) lastMsg.id = newMsgId
+          api.getConversations().then(list => {
+            if (!loading.value) conversations.value = list
+          })
         }
-        api.getConversations().then(list => {
-          if (!loading.value) conversations.value = list
-        })
       },
       (error) => {
         loading.value = false
         abortController.value = null
+        if (error.name === 'AbortError') return
         toastRef.value?.show('重新生成失败: ' + error.message, 'error')
         const lastMsg = conv.messages[conv.messages.length - 1]
         if (lastMsg?.role === 'assistant' && !lastMsg.content) {
@@ -398,6 +527,32 @@ async function handleDeleteMessage(messageId) {
     toastRef.value?.show('删除消息失败', 'error')
   }
 }
+
+function handleSettingsUpdate(newSettings) {
+  settings.value = { ...newSettings }
+  localStorage.setItem('app-settings', JSON.stringify(newSettings))
+  applyFontSize(newSettings.fontSize)
+  // If default model changed, also update the current model if it hasn't been explicitly changed this session
+  if (newSettings.defaultModel !== selectedModel.value) {
+    selectedModel.value = newSettings.defaultModel
+    localStorage.setItem('model', newSettings.defaultModel)
+  }
+  showSettings.value = false
+}
+
+async function handleClearAll() {
+  try {
+    // Delete all conversations via API
+    for (const conv of conversations.value) {
+      await api.deleteConversation(conv.id)
+    }
+    conversations.value = []
+    activeConversationId.value = null
+    toastRef.value?.show('所有对话已清除', 'success')
+  } catch (e) {
+    toastRef.value?.show('清除对话失败', 'error')
+  }
+}
 </script>
 
 <style scoped>
@@ -405,6 +560,18 @@ async function handleDeleteMessage(messageId) {
   display: flex;
   height: 100%;
   position: relative;
+}
+
+.resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  z-index: 10;
+}
+.resize-handle:hover {
+  background: var(--accent);
 }
 
 .btn-hamburger {
@@ -438,5 +605,13 @@ async function handleDeleteMessage(messageId) {
     background: rgba(0, 0, 0, 0.4);
     z-index: 99;
   }
+  .resize-handle {
+    display: none;
+  }
 }
+
+/* Modal transition */
+.modal-enter-active { transition: opacity 0.2s ease; }
+.modal-leave-active { transition: opacity 0.15s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
 </style>
