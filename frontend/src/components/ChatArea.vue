@@ -109,6 +109,16 @@
     </div>
 
     <WelcomeScreen v-if="!conversation" @send="$emit('send', $event)" />
+    <template v-if="conversation">
+      <MessageList
+        :messages="conversation.messages || []"
+        :loading="loading"
+        :conversationLoading="conversationLoading"
+        @regenerate="$emit('regenerate')"
+        @editMessage="(id, content) => $emit('editMessage', id, content)"
+        @deleteMessage="id => $emit('deleteMessage', id)"
+      />
+    </template>
     <!-- Knowledge base status bar — always visible -->
     <div class="kb-bar">
       <input
@@ -130,15 +140,7 @@
       <span class="kb-label" v-else>📚 {{ kbDocs.length }} 篇文档 · {{ kbChunkCount }} 个片段</span>
       <button v-if="kbDocs.length > 0" class="kb-delete-all" title="清空知识库" @click="clearKnowledgeBase">清空</button>
     </div>
-    <template v-else>
-      <MessageList
-        :messages="conversation.messages || []"
-        :loading="loading"
-        :conversationLoading="conversationLoading"
-        @regenerate="$emit('regenerate')"
-        @editMessage="(id, content) => $emit('editMessage', id, content)"
-        @deleteMessage="id => $emit('deleteMessage', id)"
-      />
+    <template v-if="conversation">
       <ChatInput
         ref="chatInputRef"
         :disabled="loading"
