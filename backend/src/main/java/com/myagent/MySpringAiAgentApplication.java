@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-@MapperScan("com.myagent.mapper")
+@MapperScan({"com.myagent.mapper", "com.myagent.rag.mapper"})
 public class MySpringAiAgentApplication {
     public static void main(String[] args) {
         SpringApplication.run(MySpringAiAgentApplication.class, args);
