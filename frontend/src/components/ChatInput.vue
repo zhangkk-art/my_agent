@@ -1,5 +1,8 @@
 <template>
   <div class="chat-input-container">
+    <transition name="tip-fade">
+      <div v-if="tipMsg" class="input-tip" :class="tipType">{{ tipMsg }}</div>
+    </transition>
     <div v-if="images.length > 0" class="image-preview-bar">
       <div v-for="(img, i) in images" :key="i" class="preview-thumb">
         <img :src="img" alt="Preview" />
@@ -94,7 +97,9 @@ import { ref, nextTick } from 'vue'
 
 const props = defineProps({
   disabled: Boolean,
-  loading: Boolean
+  loading: Boolean,
+  enterToSend: { type: Boolean, default: true },
+  voiceLang: { type: String, default: 'zh-CN' }
 })
 
 const emit = defineEmits(['send', 'stop'])
@@ -105,7 +110,17 @@ const fileInput = ref(null)
 const images = ref([])
 const isRecording = ref(false)
 const webSearch = ref(false)
+const tipMsg = ref('')
+const tipType = ref('error')
 let recognition = null
+let tipTimer = null
+
+function showTip(msg, type = 'error', duration = 3000) {
+  clearTimeout(tipTimer)
+  tipMsg.value = msg
+  tipType.value = type
+  tipTimer = setTimeout(() => { tipMsg.value = '' }, duration)
+}
 
 function autoResize() {
   nextTick(() => {
@@ -118,9 +133,12 @@ function autoResize() {
 }
 
 function handleKeydown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    send()
+  if (e.key === 'Enter') {
+    const shouldSend = props.enterToSend ? !e.shiftKey : (e.ctrlKey || e.metaKey)
+    if (shouldSend) {
+      e.preventDefault()
+      send()
+    }
   }
 }
 
@@ -132,20 +150,20 @@ const MAX_IMAGE_SIZE = 5 * 1024 * 1024 // 5MB
 
 function addImageFile(file) {
   if (!file.type.startsWith('image/')) {
-    alert('请选择图片文件')
+    showTip('请选择图片文件')
     return
   }
   if (file.size > MAX_IMAGE_SIZE) {
-    alert(`图片大小不能超过 5MB（当前: ${(file.size / 1024 / 1024).toFixed(1)}MB）`)
+    showTip(`图片大小不能超过 5MB（当前: ${(file.size / 1024 / 1024).toFixed(1)}MB）`)
     return
   }
   if (images.value.length >= 4) {
-    alert('最多只能上传 4 张图片')
+    showTip('最多只能上传 4 张图片')
     return
   }
   const reader = new FileReader()
   reader.onload = () => { images.value.push(reader.result) }
-  reader.onerror = () => { alert('读取文件失败，请重试') }
+  reader.onerror = () => { showTip('读取文件失败，请重试') }
   reader.readAsDataURL(file)
 }
 
@@ -173,23 +191,47 @@ function removeImage(i) {
 
 function toggleVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-  if (!SR) { alert('当前浏览器不支持语音输入（推荐使用 Chrome）'); return }
+  if (!SR) {
+    showTip('当前浏览器不支持语音输入（推荐使用 Chrome）')
+    return
+  }
   if (isRecording.value) {
     recognition?.stop()
     return
   }
   recognition = new SR()
-  recognition.lang = 'zh-CN'
+  recognition.lang = props.voiceLang
   recognition.continuous = false
-  recognition.interimResults = false
+  recognition.interimResults = true
   recognition.onresult = (e) => {
-    text.value += e.results[0][0].transcript
-    autoResize()
+    const interim = Array.from(e.results)
+      .map(r => r[0].transcript)
+      .join('')
+    if (e.results[e.results.length - 1].isFinal) {
+      text.value += interim
+      autoResize()
+    }
   }
-  recognition.onend = () => { isRecording.value = false }
-  recognition.onerror = () => { isRecording.value = false }
-  recognition.start()
-  isRecording.value = true
+  recognition.onend = () => {
+    isRecording.value = false
+    if (tipType.value === 'info') tipMsg.value = ''
+  }
+  recognition.onerror = (e) => {
+    isRecording.value = false
+    const msgs = {
+      'not-allowed': '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问',
+      'no-speech': '未检测到语音，请重试',
+      'network': '语音识别网络错误，请检查网络连接',
+    }
+    showTip(msgs[e.error] || `语音识别失败：${e.error}`)
+  }
+  try {
+    recognition.start()
+    isRecording.value = true
+    showTip('正在录音，点击麦克风停止...', 'info', 30000)
+  } catch (e) {
+    showTip('无法启动语音识别，请检查麦克风权限')
+  }
 }
 
 function send() {
@@ -210,6 +252,33 @@ defineExpose({ focus: () => inputRef.value?.focus() })
 <style scoped>
 .chat-input-container {
   padding: 16px 24px 24px;
+}
+
+.input-tip {
+  max-width: 800px;
+  margin: 0 auto 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.input-tip.error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.input-tip.info {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.tip-fade-enter-active, .tip-fade-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+.tip-fade-enter-from, .tip-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 /* Image preview bar */
@@ -304,7 +373,7 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   background: none;
   border: none;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--base-font-size, 14px);
   line-height: 1.5;
   resize: none;
   max-height: 200px;
@@ -333,9 +402,11 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   background: var(--accent-hover);
 }
 .btn-send:disabled {
-  opacity: 0.3;
+  opacity: 1;
   cursor: not-allowed;
-  background: var(--text-muted);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
 }
 
 .btn-voice {

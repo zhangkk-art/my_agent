@@ -25,7 +25,7 @@
         Send a message to start the conversation.
       </div>
     </template>
-    <button v-if="showScrollBtn" class="btn-scroll-bottom" @click="scrollToBottom">
+    <button v-if="showScrollBtn" class="btn-scroll-bottom" title="回到底部" @click="scrollToBottom">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
@@ -167,12 +167,19 @@ watch(
   border-radius: 50%;
   color: var(--text-secondary);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.2s;
   z-index: 10;
   margin-top: -48px;
+  animation: scroll-btn-in 0.3s ease;
 }
 .btn-scroll-bottom:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+@keyframes scroll-btn-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 </style>

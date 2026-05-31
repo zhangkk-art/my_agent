@@ -5,8 +5,8 @@
         <span class="message-role">
           {{ message.role === 'user' ? 'You' : 'AI' }}
         </span>
-        <span class="message-time" v-if="message.createdAt">{{ timeAgo(message.createdAt) }}</span>
-        <div v-if="hovered && !isEditing" class="message-actions">
+        <span class="message-time" v-if="message.createdAt" :title="message.createdAt">{{ timeAgo(message.createdAt) }}</span>
+        <div v-if="(hovered || confirmingDelete) && !isEditing" class="message-actions">
           <button
             class="btn-action"
             title="Copy"
@@ -31,10 +31,20 @@
               <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
           </button>
+          <template v-if="confirmingDelete">
+            <span class="delete-confirm-label">删除?</span>
+            <button class="btn-action btn-confirm-yes" title="Confirm delete" @click="doDelete">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <button class="btn-action" title="Cancel" @click="confirmingDelete = false">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </template>
           <button
+            v-else
             class="btn-action"
             title="Delete"
-            @click="confirmDelete"
+            @click="confirmingDelete = true"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"/>
@@ -69,6 +79,27 @@
         </div>
       </div>
       <template v-else>
+        <!-- Reasoning / thinking section (collapsible) -->
+        <div v-if="hasReasoning" class="thinking-section" :class="{ collapsed: !thinkingExpanded }">
+          <div class="thinking-header" @click="thinkingExpanded = !thinkingExpanded">
+            <svg class="thinking-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span class="thinking-label">思考过程</span>
+            <span v-if="isStreaming && !message.content" class="thinking-dot">●</span>
+            <svg class="thinking-chevron" :class="{ expanded: thinkingExpanded }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <div v-show="thinkingExpanded" class="thinking-content">
+            <div class="thinking-rendered markdown-body" v-html="renderedReasoning"></div>
+            <div v-if="isStreaming && !message.content" class="thinking-loading">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
         <!-- Assistant: rendered markdown only -->
         <div v-if="message.role === 'assistant'"
              class="markdown-body"
@@ -104,6 +135,7 @@
 import { ref, computed, nextTick } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
+import katex from 'katex'
 import { timeAgo } from '../utils/time.js'
 
 const SAFE_URL_PROTOCOLS = /^(https?:|mailto:)/i
@@ -149,10 +181,51 @@ const renderer = {
       + '</button></div>'
       + '<pre><code class="hljs' + (lang !== 'code' ? ' language-' + lang : '') + '">' + highlighted + '</code></pre>'
       + '</div>'
+  },
+  table(header, body) {
+    return '<div class="table-wrapper"><table><thead>' + header + '</thead><tbody>' + body + '</tbody></table></div>'
   }
 }
 
 marked.use({ renderer })
+
+// Extract math blocks before marked processes them, to avoid Markdown mangling LaTeX.
+// Returns the processed text and a map of placeholder → KaTeX HTML.
+function extractAndRenderMath(text) {
+  const rendered = new Map()
+  let idx = 0
+
+  // Display math: $$...$$
+  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+    const key = `\x02MATH${idx++}\x03`
+    try {
+      rendered.set(key, katex.renderToString(math.trim(), { displayMode: true, throwOnError: false }))
+    } catch {
+      rendered.set(key, `<span class="math-error">$$${math}$$</span>`)
+    }
+    return key
+  })
+
+  // Inline math: $...$  (single line only, avoids false positives on currency)
+  text = text.replace(/\$([^\$\n]+?)\$/g, (_, math) => {
+    const key = `\x02MATH${idx++}\x03`
+    try {
+      rendered.set(key, katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }))
+    } catch {
+      rendered.set(key, `<span class="math-error">$${math}$</span>`)
+    }
+    return key
+  })
+
+  return { text, rendered }
+}
+
+function restoreMath(html, rendered) {
+  rendered.forEach((katexHtml, key) => {
+    html = html.split(key).join(katexHtml)
+  })
+  return html
+}
 
 const props = defineProps({
   message: Object,
@@ -168,10 +241,30 @@ const isEditing = ref(false)
 const editText = ref('')
 const editInput = ref(null)
 const previewImage = ref(null)
+const confirmingDelete = ref(false)
+const thinkingExpanded = ref(false)
+
+// Start expanded during streaming so user sees the thinking process unfold
+if (props.isStreaming) {
+  thinkingExpanded.value = true
+}
+
+const hasReasoning = computed(() => {
+  return !!(props.message.reasoning && props.message.reasoning.length > 0)
+})
+
+const renderedReasoning = computed(() => {
+  if (!props.message.reasoning) return ''
+  const { text, rendered } = extractAndRenderMath(props.message.reasoning)
+  const html = marked.parse(text)
+  return sanitizeHtml(restoreMath(html, rendered))
+})
 
 const renderedContent = computed(() => {
   if (!props.message.content) return ''
-  return sanitizeHtml(marked.parse(props.message.content))
+  const { text, rendered } = extractAndRenderMath(props.message.content)
+  const html = marked.parse(text)
+  return sanitizeHtml(restoreMath(html, rendered))
 })
 
 function handleContentClick(e) {
@@ -222,10 +315,9 @@ function cancelEdit() {
   isEditing.value = false
 }
 
-function confirmDelete() {
-  if (window.confirm('Delete this message?')) {
-    emit('deleteMessage', props.message.id)
-  }
+function doDelete() {
+  confirmingDelete.value = false
+  emit('deleteMessage', props.message.id)
 }
 </script>
 
@@ -233,6 +325,8 @@ function confirmDelete() {
 .message-row {
   padding: 4px 24px;
   display: flex;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
 }
 
 @media (max-width: 768px) {
@@ -253,7 +347,7 @@ function confirmDelete() {
   max-width: 75%;
   padding: 12px 16px;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: var(--base-font-size, 14px);
   position: relative;
 }
 
@@ -436,5 +530,107 @@ function confirmDelete() {
   border-radius: 8px;
   object-fit: contain;
   cursor: default;
+}
+
+/* ── Thinking / reasoning section ── */
+.thinking-section {
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-card);
+  transition: background 0.2s;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.thinking-header:hover {
+  background: var(--bg-hover);
+}
+
+.thinking-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.thinking-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.thinking-dot {
+  color: var(--accent);
+  font-size: 8px;
+  animation: think-pulse 1.2s infinite;
+}
+
+@keyframes think-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.thinking-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.thinking-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.thinking-content {
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.thinking-rendered {
+  font-size: calc(var(--base-font-size, 14px) - 1px);
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+.thinking-rendered :deep(p) {
+  margin-bottom: 0.5em;
+}
+.thinking-rendered :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.thinking-rendered :deep(code) {
+  font-size: 0.9em;
+}
+
+.thinking-loading {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0 0;
+}
+.thinking-loading span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: thinking-bounce 1.4s infinite ease-in-out;
+}
+.thinking-loading span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-loading span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinking-bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* Mobile: always show action buttons since :hover doesn't work */
+@media (hover: none) {
+  .message-actions {
+    opacity: 1;
+  }
 }
 </style>

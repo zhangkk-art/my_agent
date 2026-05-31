@@ -3,7 +3,19 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue'],
+          'vendor-markdown': ['marked', 'highlight.js'],
+          'vendor-katex': ['katex'],
+        }
+      }
+    }
+  },
   server: {
+    host: '0.0.0.0',
     port: 5173,
     proxy: {
       '/api': {
@@ -18,6 +30,10 @@ export default defineConfig({
             res.flushHeaders();
           });
         }
+      },
+      '/share': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
       }
     }
   }

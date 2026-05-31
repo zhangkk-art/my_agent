@@ -10,13 +10,21 @@
       <h1>Hi, I'm Ayer.</h1>
       <p class="welcome-subtitle">Ask me anything, I'm here to help.</p>
     </div>
-    <div class="quick-questions" :class="{ 'is-hidden': !visible }">
-      <button
-        v-for="q in quickQuestions"
-        :key="q"
-        class="quick-btn"
-        @click="$emit('send', q)"
-      >{{ q }}</button>
+    <div class="quick-questions-row">
+      <div class="quick-questions" :class="{ 'is-hidden': !visible }">
+        <button
+          v-for="q in quickQuestions"
+          :key="q"
+          class="quick-btn"
+          @click="$emit('send', q)"
+        >{{ q }}</button>
+      </div>
+      <button class="btn-refresh" title="换一批问题" @click="refresh">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+        </svg>
+      </button>
     </div>
     <ChatInput :disabled="false" @send="(msg, imgs) => $emit('send', msg, imgs)" />
   </div>
@@ -109,14 +117,44 @@ onUnmounted(() => { clearInterval(timer) })
   font-size: 14px;
 }
 
+.quick-questions-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
 .quick-questions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
+  flex: 1;
   max-width: 560px;
-  margin-bottom: 24px;
   transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.btn-refresh {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+.btn-refresh:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-refresh:active {
+  transform: rotate(90deg);
+  transition: transform 0.15s;
 }
 .quick-questions.is-hidden {
   opacity: 0;
