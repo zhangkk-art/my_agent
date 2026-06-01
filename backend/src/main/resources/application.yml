@@ -66,6 +66,12 @@ app:
     password: ${ES_PASSWORD:}
     kb-dir: ${KB_DIR:./knowledge-base}
 
+logging:
+  level:
+    # SocketException: Connection reset is expected when the client aborts the SSE stream.
+    # Tomcat logs it internally before our IOException catch runs — suppress it here.
+    org.apache.catalina.connector: ERROR
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

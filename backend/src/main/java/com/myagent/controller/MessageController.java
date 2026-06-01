@@ -68,4 +68,43 @@ public class MessageController {
         messageMapper.deleteById(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PatchMapping("/{id}/star")
+    public ResponseEntity<Message> toggleStar(@PathVariable String id) {
+        Message message = messageMapper.selectById(id);
+        if (message == null) return ResponseEntity.notFound().build();
+        message.setStarred(message.getStarred() == null || !message.getStarred());
+        messageMapper.updateById(message);
+        return ResponseEntity.ok(message);
+    }
+
+    @PatchMapping("/{id}/rating")
+    public ResponseEntity<Message> setRating(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        Message message = messageMapper.selectById(id);
+        if (message == null) return ResponseEntity.notFound().build();
+        Object r = body.get("rating");
+        message.setRating(r != null ? ((Number) r).intValue() : null);
+        messageMapper.updateById(message);
+        return ResponseEntity.ok(message);
+    }
+
+    @GetMapping("/starred")
+    public List<Map<String, Object>> getStarred() {
+        List<Message> messages = messageMapper.selectList(
+            new LambdaQueryWrapper<Message>()
+                .eq(Message::getStarred, true)
+                .orderByDesc(Message::getCreatedAt)
+                .last("LIMIT 50")
+        );
+        return messages.stream().map(m -> {
+            Conversation conv = conversationMapper.selectById(m.getConversationId());
+            Map<String, Object> r = new HashMap<>();
+            r.put("messageId", m.getId());
+            r.put("conversationId", m.getConversationId());
+            r.put("conversationTitle", conv != null ? conv.getTitle() : "Unknown");
+            r.put("role", m.getRole());
+            r.put("content", m.getContent());
+            return r;
+        }).collect(Collectors.toList());
+    }
 }

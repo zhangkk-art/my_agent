@@ -58,7 +58,8 @@ public class ChatController {
                            HttpServletResponse resp) {
         log.info("chatStream — model='{}' webSearch={}", request.getModel(), request.isWebSearch());
         doStream(req, resp, chatService.chatStream(
-                request.getConversationId(), request.getMessage(), request.getModel(), request.isWebSearch()));
+                request.getConversationId(), request.getMessage(), request.getModel(),
+                request.isWebSearch(), request.getTemperature(), request.getMaxTokens()));
     }
 
     @PostMapping(value = "/chat/image", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -66,8 +67,9 @@ public class ChatController {
                           HttpServletRequest req,
                           HttpServletResponse resp) {
         doStream(req, resp, chatService.chatImageStream(
-                request.getConversationId(), request.getMessage(),
-                request.getModel(), request.getImages(), request.isWebSearch()));
+                request.getConversationId(), request.getMessage(), request.getModel(),
+                request.getImages(), request.isWebSearch(),
+                request.getTemperature(), request.getMaxTokens()));
     }
 
     @PostMapping(value = "/chat/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

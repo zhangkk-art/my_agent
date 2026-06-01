@@ -9,6 +9,8 @@ public class ChatRequest {
     private String model;
     private List<String> images = new ArrayList<>();
     private boolean webSearch = false;
+    private Double temperature;
+    private Integer maxTokens;
 
     public String getConversationId() { return conversationId; }
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
@@ -20,4 +22,8 @@ public class ChatRequest {
     public void setImages(List<String> images) { this.images = images; }
     public boolean isWebSearch() { return webSearch; }
     public void setWebSearch(boolean webSearch) { this.webSearch = webSearch; }
+    public Double getTemperature() { return temperature; }
+    public void setTemperature(Double temperature) { this.temperature = temperature; }
+    public Integer getMaxTokens() { return maxTokens; }
+    public void setMaxTokens(Integer maxTokens) { this.maxTokens = maxTokens; }
 }

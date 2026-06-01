@@ -335,7 +335,8 @@ public class ChatService {
         return base;
     }
 
-    public StreamContext chatStream(String conversationId, String userMessage, String model, boolean webSearch) {
+    public StreamContext chatStream(String conversationId, String userMessage, String model,
+                                    boolean webSearch, Double temperature, Integer maxTokens) {
         Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
 
         List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
@@ -345,6 +346,7 @@ public class ChatService {
         var spec = selectClient(model).prompt()
                 .system(buildDynamicSystemPrompt(conv.getId(), userMessage, webSearch))
                 .messages(history);
+        applyOptions(spec, temperature, maxTokens);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
             spec.tools(toolFunctions, webSearchTools);
@@ -413,7 +415,18 @@ public class ChatService {
         }
     }
 
-    public StreamContext chatImageStream(String conversationId, String userMessage, String model, List<String> images, boolean webSearch) {
+    private void applyOptions(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec spec,
+                               Double temperature, Integer maxTokens) {
+        if (temperature == null && maxTokens == null) return;
+        var opts = org.springframework.ai.openai.OpenAiChatOptions.builder();
+        if (temperature != null) opts.temperature(temperature);
+        if (maxTokens != null) opts.maxTokens(maxTokens);
+        spec.options(opts.build());
+    }
+
+    public StreamContext chatImageStream(String conversationId, String userMessage, String model,
+                                         List<String> images, boolean webSearch,
+                                         Double temperature, Integer maxTokens) {
         Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
 
         List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
@@ -440,6 +453,7 @@ public class ChatService {
         var spec = selectClient(model).prompt()
                 .system(buildDynamicSystemPrompt(conv.getId(), userMessage, webSearch))
                 .messages(history);
+        applyOptions(spec, temperature, maxTokens);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
             spec.tools(toolFunctions, webSearchTools);

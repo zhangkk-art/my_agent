@@ -25,6 +25,17 @@ CREATE TABLE IF NOT EXISTS conversations (
     updated_at DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS workflow_templates (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(255) NULL DEFAULT NULL,
+    system_prompt TEXT NULL DEFAULT NULL,
+    initial_message TEXT NULL DEFAULT NULL,
+    sort_order INT DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS messages (
     id VARCHAR(36) PRIMARY KEY,
     conversation_id VARCHAR(36) NOT NULL,

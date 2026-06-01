@@ -16,6 +16,8 @@ public class Conversation {
     private String title;
     private String systemPrompt;
     private String shareToken;
+    private Boolean pinned;
+    private String folderName;
 
     @TableField(exist = false)
     private List<Message> messages = new ArrayList<>();
@@ -42,6 +44,10 @@ public class Conversation {
     public void setShareToken(String shareToken) { this.shareToken = shareToken; }
     public List<Message> getMessages() { return messages; }
     public void setMessages(List<Message> messages) { this.messages = messages; }
+    public Boolean getPinned() { return pinned; }
+    public void setPinned(Boolean pinned) { this.pinned = pinned; }
+    public String getFolderName() { return folderName; }
+    public void setFolderName(String folderName) { this.folderName = folderName; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,15 +30,46 @@ public class ConversationService {
     public List<Conversation> getAllConversations() {
         List<Conversation> conversations = conversationMapper.selectList(
                 new LambdaQueryWrapper<Conversation>()
+                        .orderByDesc(Conversation::getPinned)
                         .orderByDesc(Conversation::getUpdatedAt));
         for (Conversation conv : conversations) {
-            conv.setMessages(messageMapper.selectList(
-                    new LambdaQueryWrapper<Message>()
-                            .eq(Message::getConversationId, conv.getId())
-                            .orderByAsc(Message::getCreatedAt)
-                            .last("LIMIT " + MAX_MESSAGES)));
+            conv.setMessages(java.util.Collections.emptyList());
         }
         return conversations;
+    }
+
+    @Transactional
+    public Conversation togglePin(String id) {
+        Conversation conv = conversationMapper.selectById(id);
+        if (conv == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+        conv.setPinned(conv.getPinned() == null || !conv.getPinned());
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conv);
+        return conv;
+    }
+
+    @Transactional
+    public Conversation setFolder(String id, String folderName) {
+        Conversation conv = conversationMapper.selectById(id);
+        if (conv == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+        conv.setFolderName(folderName == null || folderName.isBlank() ? null : folderName.trim());
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conv);
+        return conv;
+    }
+
+    @Transactional
+    public Conversation importConversation(String title, List<java.util.Map<String, String>> messages) {
+        Conversation conv = createConversation(title != null && !title.isBlank() ? title : "导入的对话");
+        for (java.util.Map<String, String> m : messages) {
+            String role = m.getOrDefault("role", "user");
+            String content = m.getOrDefault("content", "");
+            if (!content.isBlank() && (role.equals("user") || role.equals("assistant"))) {
+                Message msg = new Message(UUID.randomUUID().toString(), role, content, conv.getId());
+                messageMapper.insert(msg);
+            }
+        }
+        return getConversation(conv.getId());
     }
 
     @Transactional
@@ -133,17 +165,26 @@ public class ConversationService {
 
     /**
      * Delete oldest messages when a conversation exceeds the limit.
+     * Uses a COUNT + SELECT + batch DELETE instead of N individual DELETEs.
      */
     @Transactional
     public void trimMessages(String conversationId) {
-        List<Message> messages = messageMapper.selectList(
+        long count = messageMapper.selectCount(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conversationId));
+        if (count <= MAX_MESSAGES) return;
+
+        int excess = (int) (count - MAX_MESSAGES);
+        List<Message> oldest = messageMapper.selectList(
                 new LambdaQueryWrapper<Message>()
                         .eq(Message::getConversationId, conversationId)
-                        .orderByDesc(Message::getCreatedAt));
-        if (messages.size() > MAX_MESSAGES) {
-            for (int i = MAX_MESSAGES; i < messages.size(); i++) {
-                messageMapper.deleteById(messages.get(i).getId());
-            }
+                        .orderByAsc(Message::getCreatedAt)
+                        .last("LIMIT " + excess));
+        if (!oldest.isEmpty()) {
+            List<String> ids = oldest.stream()
+                    .map(Message::getId)
+                    .collect(java.util.stream.Collectors.toList());
+            messageMapper.deleteBatchIds(ids);
         }
     }
 
@@ -189,6 +230,44 @@ public class ConversationService {
         conversationMapper.updateById(conv);
 
         return getConversation(conv.getId());
+    }
+
+    /**
+     * Fork a conversation: copy all messages up to and including upToMessageId into a new conversation.
+     */
+    @Transactional
+    public Conversation forkConversation(String conversationId, String upToMessageId) {
+        Conversation original = conversationMapper.selectById(conversationId);
+        if (original == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + conversationId);
+        }
+
+        List<Message> allMessages = messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conversationId)
+                        .orderByAsc(Message::getCreatedAt));
+
+        List<Message> toCopy = new ArrayList<>();
+        for (Message m : allMessages) {
+            toCopy.add(m);
+            if (m.getId().equals(upToMessageId)) break;
+        }
+
+        String newId = UUID.randomUUID().toString();
+        Conversation forked = new Conversation(newId, original.getTitle() + " [分支]");
+        forked.setSystemPrompt(original.getSystemPrompt());
+        conversationMapper.insert(forked);
+
+        for (Message m : toCopy) {
+            Message copy = new Message(UUID.randomUUID().toString(), m.getRole(), m.getContent(), newId);
+            copy.setReasoning(m.getReasoning());
+            copy.setPromptTokens(m.getPromptTokens());
+            copy.setCompletionTokens(m.getCompletionTokens());
+            copy.setTotalTokens(m.getTotalTokens());
+            messageMapper.insert(copy);
+        }
+
+        return getConversation(newId);
     }
 
     /**

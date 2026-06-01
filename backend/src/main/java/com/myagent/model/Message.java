@@ -17,6 +17,8 @@ public class Message {
     private Integer promptTokens;
     private Integer completionTokens;
     private Integer totalTokens;
+    private Boolean starred;
+    private Integer rating;
     private LocalDateTime createdAt;
 
     public Message() {}
@@ -45,6 +47,10 @@ public class Message {
     public void setCompletionTokens(Integer completionTokens) { this.completionTokens = completionTokens; }
     public Integer getTotalTokens() { return totalTokens; }
     public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
+    public Boolean getStarred() { return starred; }
+    public void setStarred(Boolean starred) { this.starred = starred; }
+    public Integer getRating() { return rating; }
+    public void setRating(Integer rating) { this.rating = rating; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

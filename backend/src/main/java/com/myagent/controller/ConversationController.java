@@ -59,6 +59,30 @@ public class ConversationController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{id}/fork")
+    public Conversation forkConversation(@PathVariable String id, @RequestBody Map<String, String> body) {
+        return conversationService.forkConversation(id, body.get("messageId"));
+    }
+
+    @PatchMapping("/{id}/pin")
+    public Conversation togglePin(@PathVariable String id) {
+        return conversationService.togglePin(id);
+    }
+
+    @PatchMapping("/{id}/folder")
+    public Conversation setFolder(@PathVariable String id, @RequestBody Map<String, String> body) {
+        return conversationService.setFolder(id, body.get("folderName"));
+    }
+
+    @PostMapping("/import")
+    public Conversation importConversation(@RequestBody Map<String, Object> body) {
+        String title = (String) body.get("title");
+        @SuppressWarnings("unchecked")
+        java.util.List<java.util.Map<String, String>> messages =
+                (java.util.List<java.util.Map<String, String>>) body.get("messages");
+        return conversationService.importConversation(title, messages != null ? messages : java.util.List.of());
+    }
+
     @PostMapping("/{id}/share")
     public Map<String, String> shareConversation(@PathVariable String id) {
         String token = conversationService.shareConversation(id);

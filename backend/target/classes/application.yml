@@ -59,6 +59,18 @@ app:
   websearch:
     api-key: ${WEB_SEARCH_API_KEY:sk-6e67f3ffa84f435d8d117919b25d03b0}
     endpoint: https://api.bochaai.com/v1/web-search
+  elasticsearch:
+    host: ${ES_HOST:localhost}
+    port: ${ES_PORT:9200}
+    username: ${ES_USERNAME:}
+    password: ${ES_PASSWORD:}
+    kb-dir: ${KB_DIR:./knowledge-base}
+
+logging:
+  level:
+    # SocketException: Connection reset is expected when the client aborts the SSE stream.
+    # Tomcat logs it internally before our IOException catch runs — suppress it here.
+    org.apache.catalina.connector: ERROR
 
 mybatis-plus:
   configuration:

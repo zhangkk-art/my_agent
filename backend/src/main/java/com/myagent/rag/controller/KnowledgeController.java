@@ -83,7 +83,7 @@ public class KnowledgeController {
 
         ChatService.StreamContext ctx = chatService.chatStream(
                 request.getConversationId(), augmentedMessage,
-                request.getModel(), request.isWebSearch());
+                request.getModel(), request.isWebSearch(), null, null);
 
         // Stream the response, appending citations at the end
         AsyncContext asyncCtx = req.startAsync();

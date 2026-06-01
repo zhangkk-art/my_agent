@@ -31,6 +31,16 @@ public class SchemaMigration implements ApplicationRunner {
                 "ALTER TABLE messages ADD COLUMN completion_tokens INT NULL DEFAULT NULL");
         addColumnIfMissing("messages", "total_tokens",
                 "ALTER TABLE messages ADD COLUMN total_tokens INT NULL DEFAULT NULL");
+        addColumnIfMissing("conversations", "pinned",
+                "ALTER TABLE conversations ADD COLUMN pinned BOOLEAN NOT NULL DEFAULT FALSE");
+        addColumnIfMissing("conversations", "folder_name",
+                "ALTER TABLE conversations ADD COLUMN folder_name VARCHAR(100) NULL DEFAULT NULL");
+        addColumnIfMissing("messages", "starred",
+                "ALTER TABLE messages ADD COLUMN starred BOOLEAN NOT NULL DEFAULT FALSE");
+        addColumnIfMissing("messages", "rating",
+                "ALTER TABLE messages ADD COLUMN rating TINYINT NULL DEFAULT NULL");
+        addIndexIfMissing("messages", "idx_messages_conv_time",
+                "CREATE INDEX idx_messages_conv_time ON messages(conversation_id, created_at)");
     }
 
     private void addColumnIfMissing(String table, String column, String alterSql) {
@@ -41,6 +51,17 @@ public class SchemaMigration implements ApplicationRunner {
         if (count == null || count == 0) {
             jdbcTemplate.execute(alterSql);
             log.info("Schema migration: added column {}.{}", table, column);
+        }
+    }
+
+    private void addIndexIfMissing(String table, String indexName, String createSql) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics " +
+                "WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
+                Integer.class, table, indexName);
+        if (count == null || count == 0) {
+            jdbcTemplate.execute(createSql);
+            log.info("Schema migration: created index {} on {}", indexName, table);
         }
     }
 }
