@@ -340,11 +340,11 @@ defineExpose({ sidebarOpen })
 
 <style scoped>
 .sidebar {
-  width: 280px; min-width: 280px; height: 100%;
+  width: 280px; min-width: 280px; height: 100%; overflow: hidden;
   background: var(--bg-sidebar); display: flex; flex-direction: column;
   border-right: 1px solid var(--border-color); transition: transform 0.25s ease; z-index: 100;
 }
-.sidebar-header { padding: 16px; border-bottom: 1px solid var(--border-color); }
+.sidebar-header { padding: 16px; border-bottom: 1px solid var(--border-color); overflow: hidden; }
 .logo { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary); }
 .header-actions { display: flex; align-items: center; gap: 6px; }
 .file-hidden { display: none; }

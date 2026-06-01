@@ -17,12 +17,14 @@
         :message="msg"
         :isStreaming="loading && msg === messages[messages.length - 1] && msg.role === 'assistant'"
         :isLastAi="msg.role === 'assistant' && index === messages.length - 1 && !loading"
+        :loading="loading"
         @regenerate="$emit('regenerate')"
         @editMessage="(id, content) => $emit('editMessage', id, content)"
         @deleteMessage="id => $emit('deleteMessage', id)"
         @forkMessage="id => $emit('forkMessage', id)"
         @starMessage="id => $emit('starMessage', id)"
         @rateMessage="(id, v) => $emit('rateMessage', id, v)"
+        @continueMessage="id => $emit('continueMessage', id)"
       />
       <div v-if="messages.length === 0" class="empty-messages">
         Send a message to start the conversation.
@@ -58,7 +60,7 @@ const props = defineProps({
   conversationLoading: Boolean
 })
 
-defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage'])
+defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage'])
 
 const listRef = ref(null)
 const showScrollBtn = ref(false)

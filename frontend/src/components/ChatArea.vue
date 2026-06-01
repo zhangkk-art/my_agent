@@ -147,6 +147,7 @@
         @forkMessage="id => $emit('forkMessage', id)"
         @starMessage="id => $emit('starMessage', id)"
         @rateMessage="(id, v) => $emit('rateMessage', id, v)"
+        @continueMessage="id => $emit('continueMessage', id)"
       />
       <ChatInput
         ref="chatInputRef"
@@ -183,7 +184,7 @@ const props = defineProps({
   voiceLang: { type: String, default: 'zh-CN' }
 })
 
-const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'createFromTemplate', 'update:model', 'updateSystemPrompt', 'toast', 'updateAiParams'])
+const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage', 'createFromTemplate', 'update:model', 'updateSystemPrompt', 'toast', 'updateAiParams'])
 
 const messageListRef = ref(null)
 const open = ref(false)

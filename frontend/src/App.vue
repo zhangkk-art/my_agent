@@ -40,6 +40,7 @@
       @forkMessage="handleForkMessage"
       @starMessage="handleStarMessage"
       @rateMessage="handleRateMessage"
+      @continueMessage="handleContinueMessage"
       @createFromTemplate="handleCreateFromTemplate"
       @updateSystemPrompt="handleUpdateSystemPrompt"
       @update:model="onModelChange"
@@ -108,9 +109,10 @@ const showSettings = ref(false)
 const settings = ref(loadSettings())
 // Track the last webSearch state so regenerate can reuse it
 const lastWebSearch = ref(false)
+const continuingMessageId = ref(null)  // messageId being continued, null when not in continuation mode
 
 // ── Resizable sidebar ──
-const SIDEBAR_MIN = 200
+const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 500
 const sidebarWidth = ref(Number(localStorage.getItem('sidebarWidth')) || 280)
 let resizing = false
@@ -363,12 +365,95 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
   }
 }
 
-function stopStream() {
-  if (abortController.value) {
-    abortController.value.abort()
-    abortController.value = null
-    loading.value = false
+async function stopStream() {
+  if (!abortController.value) return
+
+  const conversationId = activeConversationId.value
+  const conv = conversations.value.find(c => c.id === conversationId)
+  const continueId = continuingMessageId.value  // capture before clearing
+
+  abortController.value.abort()
+  abortController.value = null
+  loading.value = false
+  continuingMessageId.value = null
+
+  if (continueId) {
+    // Continuation was in progress — update existing message with current content
+    const msg = conv?.messages.find(m => m.id === continueId)
+    if (msg) {
+      msg.interrupted = true
+      if (msg.content) {
+        try { await api.saveInterruptedUpdate(continueId, msg.content) }
+        catch (e) { toastRef.value?.show('保存中断内容失败', 'error') }
+      }
+    }
+  } else {
+    // Initial stream — last message still has streaming-xxx id
+    const lastMsg = conv?.messages[conv.messages.length - 1]
+    if (lastMsg?.id?.startsWith('streaming-') && lastMsg?.role === 'assistant') {
+      if (lastMsg.content) {
+        try {
+          const saved = await api.savePartialMessage(conversationId, lastMsg.content, lastMsg.reasoning || null)
+          lastMsg.id = saved.id
+          lastMsg.interrupted = true
+        } catch (e) {
+          toastRef.value?.show('保存中断内容失败', 'error')
+        }
+      } else {
+        // Nothing streamed yet — remove placeholder
+        conv.messages.pop()
+      }
+    }
   }
+}
+
+function handleContinueMessage(messageId) {
+  if (!activeConversationId.value || loading.value) return
+  const conv = conversations.value.find(c => c.id === activeConversationId.value)
+  if (!conv) return
+  const msg = conv.messages.find(m => m.id === messageId)
+  if (!msg) return
+
+  msg.interrupted = false
+  loading.value = true
+  continuingMessageId.value = messageId
+
+  const controller = new AbortController()
+  abortController.value = controller
+
+  const onReasoning = (reasoning) => {
+    const c = conversations.value.find(c => c.id === activeConversationId.value)
+    const m = c?.messages.find(m => m.id === messageId)
+    if (m) m.reasoning = (m.reasoning || '') + reasoning
+  }
+  const onChunk = (content) => {
+    const c = conversations.value.find(c => c.id === activeConversationId.value)
+    const m = c?.messages.find(m => m.id === messageId)
+    if (m) m.content += content
+  }
+  const onDone = () => {
+    loading.value = false
+    abortController.value = null
+    continuingMessageId.value = null
+    refreshConversationList()
+  }
+  const onError = (error) => {
+    loading.value = false
+    abortController.value = null
+    continuingMessageId.value = null
+    if (error.name === 'AbortError') return  // stopStream handles save + interrupted flag
+    const c = conversations.value.find(c => c.id === activeConversationId.value)
+    const m = c?.messages.find(m => m.id === messageId)
+    if (m) m.interrupted = true
+    toastRef.value?.show('续传出错: ' + error.message, 'error')
+  }
+
+  const { temperature, maxTokens } = chatAreaRef.value?.aiParams ?? {}
+  api.continueStream(
+    activeConversationId.value, messageId, selectedModel.value,
+    temperature ?? null, maxTokens ?? null,
+    onReasoning, onChunk, onDone, onError, controller.signal
+  )
 }
 
 function regenerateMessage() {

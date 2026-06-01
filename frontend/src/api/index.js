@@ -107,6 +107,30 @@ export function regenerateStream(conversationId, message, model, webSearch, onRe
   streamSse(`${BASE_URL}/chat/regenerate`, { conversationId, message, model, webSearch }, onReasoning, onChunk, onDone, onError, signal);
 }
 
+export async function savePartialMessage(conversationId, content, reasoning) {
+  const res = await fetch(`${BASE_URL}/messages/save-partial`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId, content, reasoning })
+  })
+  if (!res.ok) throw new Error('Failed to save partial message')
+  return res.json()
+}
+
+export async function saveInterruptedUpdate(messageId, content) {
+  const res = await fetch(`${BASE_URL}/messages/${messageId}/interrupted`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content })
+  })
+  if (!res.ok) throw new Error('Failed to update interrupted message')
+  return res.json()
+}
+
+export function continueStream(conversationId, messageId, model, temperature, maxTokens, onReasoning, onChunk, onDone, onError, signal) {
+  streamSse(`${BASE_URL}/chat/continue`, { conversationId, messageId, model, temperature, maxTokens }, onReasoning, onChunk, onDone, onError, signal)
+}
+
 export async function getConversations() {
   const res = await fetch(`${BASE_URL}/conversations`);
   if (!res.ok) throw new Error('Failed to fetch conversations');

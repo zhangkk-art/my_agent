@@ -157,6 +157,20 @@
             <span v-if="message.promptTokens"> · 输入 {{ message.promptTokens }}</span>
             <span v-if="message.completionTokens"> · 输出 {{ message.completionTokens }}</span>
           </div>
+          <!-- Continue generation button for interrupted messages -->
+          <div v-if="message.interrupted && !isStreamingMsg" class="interrupted-footer">
+            <span class="interrupted-label">⚠ 回答被中断</span>
+            <button
+              class="btn-continue"
+              :disabled="loading"
+              @click="$emit('continueMessage', message.id)"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="5 12 19 12"/><polyline points="13 6 19 12 13 18"/>
+              </svg>
+              继续生成
+            </button>
+          </div>
         </template>
         <!-- User: images + raw text -->
         <template v-else>
@@ -279,10 +293,11 @@ function restoreMath(html, rendered) {
 const props = defineProps({
   message: Object,
   isStreaming: Boolean,
-  isLastAi: Boolean
+  isLastAi: Boolean,
+  loading: Boolean
 })
 
-const emit = defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage'])
+const emit = defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage'])
 
 const hovered = ref(false)
 const copied = ref(false)
@@ -591,6 +606,39 @@ function doDelete() {
   color: var(--text-muted);
   opacity: 0.7;
   user-select: none;
+}
+
+.interrupted-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+}
+.interrupted-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.btn-continue {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-continue:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.btn-continue:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .message-images {
