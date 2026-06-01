@@ -25,6 +25,12 @@ public class SchemaMigration implements ApplicationRunner {
                 "ALTER TABLE messages ADD COLUMN reasoning TEXT NULL DEFAULT NULL");
         addColumnIfMissing("conversations", "share_token",
                 "ALTER TABLE conversations ADD COLUMN share_token VARCHAR(64) NULL DEFAULT NULL");
+        addColumnIfMissing("messages", "prompt_tokens",
+                "ALTER TABLE messages ADD COLUMN prompt_tokens INT NULL DEFAULT NULL");
+        addColumnIfMissing("messages", "completion_tokens",
+                "ALTER TABLE messages ADD COLUMN completion_tokens INT NULL DEFAULT NULL");
+        addColumnIfMissing("messages", "total_tokens",
+                "ALTER TABLE messages ADD COLUMN total_tokens INT NULL DEFAULT NULL");
     }
 
     private void addColumnIfMissing(String table, String column, String alterSql) {
