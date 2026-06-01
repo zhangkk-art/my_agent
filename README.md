@@ -94,7 +94,7 @@ export DEEPSEEK_API_KEY=sk-your-key
 # 通义千问（使用 Qwen 时必填）
 export DASHSCOPE_API_KEY=sk-your-key
 
-# MySQL 密码（默认 062017）
+# MySQL 密码
 export MYSQL_PASSWORD=your_password
 
 # 联网搜索 - BochaAI（可选，https://open.bochaai.com）
