@@ -10,9 +10,14 @@
       :activeId="activeConversationId"
       :width="sidebarWidth"
       @select="selectConversation"
+      @selectMessage="handleSelectMessage"
       @new="newConversation"
       @delete="handleDeleteConversation"
       @rename="handleRenameConversation"
+      @pin="handlePinConversation"
+      @setFolder="handleSetFolder"
+      @import="handleImportConversation"
+      @bulkDelete="handleBulkDelete"
       @openSettings="showSettings = true"
     />
     <div
@@ -32,6 +37,10 @@
       @regenerate="regenerateMessage"
       @editMessage="handleEditMessage"
       @deleteMessage="handleDeleteMessage"
+      @forkMessage="handleForkMessage"
+      @starMessage="handleStarMessage"
+      @rateMessage="handleRateMessage"
+      @createFromTemplate="handleCreateFromTemplate"
       @updateSystemPrompt="handleUpdateSystemPrompt"
       @update:model="onModelChange"
       @toast="(e) => toastRef?.show(e.message, e.type)"
@@ -97,6 +106,8 @@ const toastRef = ref(null)
 const selectedModel = ref(localStorage.getItem('model') || 'deepseek')
 const showSettings = ref(false)
 const settings = ref(loadSettings())
+// Track the last webSearch state so regenerate can reuse it
+const lastWebSearch = ref(false)
 
 // ── Resizable sidebar ──
 const SIDEBAR_MIN = 200
@@ -201,14 +212,9 @@ async function selectConversation(id) {
   }
 }
 
-async function newConversation() {
-  try {
-    const conv = await api.createConversation()
-    conversations.value.unshift(conv)
-    activeConversationId.value = conv.id
-  } catch (e) {
-    toastRef.value?.show('创建会话失败', 'error')
-  }
+function newConversation() {
+  activeConversationId.value = null
+  nextTick(() => chatAreaRef.value?.focusInput())
 }
 
 async function handleDeleteConversation(id) {
@@ -240,6 +246,19 @@ function onModelChange(m) {
   localStorage.setItem('model', m)
 }
 
+// Refresh conversation metadata (titles, updatedAt) while preserving local messages.
+// getAllConversations() no longer returns messages to avoid N+1 queries on the backend.
+function refreshConversationList() {
+  api.getConversations().then(freshList => {
+    if (loading.value) return
+    const localMsgMap = new Map(conversations.value.map(c => [c.id, c.messages]))
+    conversations.value = freshList.map(c => ({
+      ...c,
+      messages: localMsgMap.get(c.id) ?? []
+    }))
+  })
+}
+
 function handleSendMessage(message, images = [], webSearch = false) {
   if (loading.value) return
 
@@ -256,6 +275,7 @@ function handleSendMessage(message, images = [], webSearch = false) {
 }
 
 function sendStreamMessage(conversationId, message, images = [], webSearch = false) {
+  lastWebSearch.value = webSearch
   loading.value = true
 
   const controller = new AbortController()
@@ -315,9 +335,7 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
         }
       }
       // Only refresh from server on normal completion; on abort, keep local state
-      api.getConversations().then(list => {
-        if (!loading.value) conversations.value = list
-      })
+      refreshConversationList()
     }
   }
   const onError = (error) => {
@@ -335,12 +353,13 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
     }
   }
 
+  const { temperature, maxTokens } = chatAreaRef.value?.aiParams ?? {}
   if (images.length > 0) {
     api.sendImageStream(conversationId, message, selectedModel.value, images, webSearch,
-      onReasoning, onChunk, onDone, onError, controller.signal)
+      temperature ?? null, maxTokens ?? null, onReasoning, onChunk, onDone, onError, controller.signal)
   } else {
     api.sendMessageStream(conversationId, message, selectedModel.value, webSearch,
-      onReasoning, onChunk, onDone, onError, controller.signal)
+      temperature ?? null, maxTokens ?? null, onReasoning, onChunk, onDone, onError, controller.signal)
   }
 }
 
@@ -393,6 +412,7 @@ function regenerateMessage() {
     activeConversationId.value,
     lastUserContent,
     selectedModel.value,
+    lastWebSearch.value,
     // onReasoning
     (reasoning) => {
       const lastMsg = conv.messages[conv.messages.length - 1]
@@ -416,9 +436,7 @@ function regenerateMessage() {
         if (lastMsg && lastMsg.id.startsWith('streaming-')) {
           lastMsg.id = messageId
         }
-        api.getConversations().then(list => {
-          if (!loading.value) conversations.value = list
-        })
+        refreshConversationList()
       }
     },
     // onError
@@ -477,6 +495,7 @@ async function handleEditMessage(messageId, newContent) {
       activeConversationId.value,
       updated.content,
       selectedModel.value,
+      lastWebSearch.value,
       (reasoning) => {
         const lastMsg = conv.messages[conv.messages.length - 1]
         if (lastMsg?.role === 'assistant') lastMsg.reasoning = (lastMsg.reasoning || '') + reasoning
@@ -491,9 +510,7 @@ async function handleEditMessage(messageId, newContent) {
         if (newMsgId) {
           const lastMsg = conv.messages[conv.messages.length - 1]
           if (lastMsg?.id.startsWith('streaming-')) lastMsg.id = newMsgId
-          api.getConversations().then(list => {
-            if (!loading.value) conversations.value = list
-          })
+          refreshConversationList()
         }
       },
       (error) => {
@@ -510,6 +527,99 @@ async function handleEditMessage(messageId, newContent) {
     )
   } catch (e) {
     toastRef.value?.show('编辑消息失败', 'error')
+  }
+}
+
+async function handleSelectMessage(conversationId, messageId) {
+  await selectConversation(conversationId)
+  nextTick(() => chatAreaRef.value?.scrollToMessage(messageId))
+}
+
+async function handlePinConversation(id) {
+  try {
+    const updated = await api.pinConversation(id)
+    const conv = conversations.value.find(c => c.id === id)
+    if (conv) { conv.pinned = updated.pinned; conversations.value.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) }
+  } catch (e) { toastRef.value?.show('操作失败', 'error') }
+}
+
+async function handleSetFolder(id, folderName) {
+  try {
+    await api.setConversationFolder(id, folderName)
+    const conv = conversations.value.find(c => c.id === id)
+    if (conv) conv.folderName = folderName || null
+  } catch (e) { toastRef.value?.show('操作失败', 'error') }
+}
+
+async function handleImportConversation(title, messages) {
+  try {
+    const conv = await api.importConversation(title, messages)
+    conversations.value.unshift(conv)
+    activeConversationId.value = conv.id
+    toastRef.value?.show('导入成功', 'success')
+  } catch (e) { toastRef.value?.show('导入失败', 'error') }
+}
+
+async function handleBulkDelete(ids) {
+  try {
+    for (const id of ids) await api.deleteConversation(id)
+    conversations.value = conversations.value.filter(c => !ids.includes(c.id))
+    if (ids.includes(activeConversationId.value)) activeConversationId.value = null
+    toastRef.value?.show(`已删除 ${ids.length} 个对话`, 'success')
+  } catch (e) { toastRef.value?.show('批量删除失败', 'error') }
+}
+
+async function handleStarMessage(messageId) {
+  try {
+    const updated = await api.starMessage(messageId)
+    const conv = currentConversation.value
+    if (conv) {
+      const msg = conv.messages.find(m => m.id === messageId)
+      if (msg) msg.starred = updated.starred
+    }
+  } catch {}
+}
+
+async function handleRateMessage(messageId, rating) {
+  try {
+    const updated = await api.rateMessage(messageId, rating)
+    const conv = currentConversation.value
+    if (conv) {
+      const msg = conv.messages.find(m => m.id === messageId)
+      if (msg) msg.rating = updated.rating
+    }
+  } catch {}
+}
+
+async function handleForkMessage(messageId) {
+  if (!activeConversationId.value) return
+  try {
+    const forked = await api.forkConversation(activeConversationId.value, messageId)
+    conversations.value.unshift(forked)
+    activeConversationId.value = forked.id
+    toastRef.value?.show('已创建分支对话', 'success')
+    nextTick(() => chatAreaRef.value?.focusInput())
+  } catch (e) {
+    toastRef.value?.show('创建分支失败', 'error')
+  }
+}
+
+async function handleCreateFromTemplate(template) {
+  try {
+    const conv = await api.createConversation(template.name)
+    conversations.value.unshift(conv)
+    activeConversationId.value = conv.id
+    if (template.systemPrompt) {
+      await api.updateSystemPrompt(conv.id, template.systemPrompt)
+      conv.systemPrompt = template.systemPrompt
+    }
+    if (template.initialMessage) {
+      sendStreamMessage(conv.id, template.initialMessage, [], false)
+    } else {
+      nextTick(() => chatAreaRef.value?.focusInput())
+    }
+  } catch (e) {
+    toastRef.value?.show('从模板创建失败', 'error')
   }
 }
 

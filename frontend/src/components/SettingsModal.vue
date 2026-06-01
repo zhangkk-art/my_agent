@@ -121,6 +121,37 @@
           </div>
         </div>
 
+        <!-- 对话模板 -->
+        <div class="settings-section">
+          <div class="section-label">对话模板</div>
+
+          <div v-if="editingWorkflowId" class="template-editor">
+            <input v-model="wfName" class="template-edit-name" placeholder="模板名称" maxlength="50" />
+            <input v-model="wfDesc" class="template-edit-name" placeholder="简介（可选）" maxlength="100" style="margin-top:0" />
+            <textarea v-model="wfSystemPrompt" class="template-edit-content" rows="3" placeholder="系统提示词（可选）"></textarea>
+            <textarea v-model="wfInitialMessage" class="template-edit-content" rows="2" placeholder="初始消息，创建后自动发送（可选）"></textarea>
+            <div class="template-editor-actions">
+              <button class="btn-template-save" @click="saveWorkflow">保存</button>
+              <button class="btn-template-cancel" @click="cancelWorkflowEdit">取消</button>
+            </div>
+          </div>
+
+          <div v-for="wf in workflowTemplates" :key="wf.id" class="template-row">
+            <div class="template-info">
+              <div class="template-name">{{ wf.name }}</div>
+              <div class="template-preview">{{ wf.description || wf.initialMessage || wf.systemPrompt || '无描述' }}</div>
+            </div>
+            <div class="template-actions">
+              <button class="btn-template-edit" @click="startEditWorkflow(wf)">编辑</button>
+              <button class="btn-template-delete" @click="deleteWorkflow(wf.id)">删除</button>
+            </div>
+          </div>
+
+          <div v-if="!editingWorkflowId" class="template-add-row">
+            <button class="btn-template-add" @click="startNewWorkflow">+ 新建模板</button>
+          </div>
+        </div>
+
         <!-- 数据 -->
         <div class="settings-section">
           <div class="section-label">数据</div>
@@ -168,6 +199,15 @@ const editName = ref('')
 const editContent = ref('')
 let templatesLoaded = false
 
+// ── Workflow template management ──
+const workflowTemplates = ref([])
+const editingWorkflowId = ref(null)
+const wfName = ref('')
+const wfDesc = ref('')
+const wfSystemPrompt = ref('')
+const wfInitialMessage = ref('')
+let workflowsLoaded = false
+
 watch(() => props.modelValue, (v) => {
   if (v && !templatesLoaded) {
     templatesLoaded = true
@@ -180,6 +220,10 @@ watch(() => props.modelValue, (v) => {
         try { templates.value = JSON.parse(cached) } catch {}
       }
     })
+  }
+  if (v && !workflowsLoaded) {
+    workflowsLoaded = true
+    api.getWorkflowTemplates().then(list => { workflowTemplates.value = list }).catch(() => {})
   }
 })
 
@@ -231,6 +275,58 @@ async function deleteTemplate(id) {
     loadTemplatesFromApi()
   } catch (e) {
     console.error('Delete template failed:', e)
+  }
+}
+
+function startNewWorkflow() {
+  editingWorkflowId.value = '__new__'
+  wfName.value = ''
+  wfDesc.value = ''
+  wfSystemPrompt.value = ''
+  wfInitialMessage.value = ''
+}
+
+function startEditWorkflow(wf) {
+  editingWorkflowId.value = wf.id
+  wfName.value = wf.name
+  wfDesc.value = wf.description || ''
+  wfSystemPrompt.value = wf.systemPrompt || ''
+  wfInitialMessage.value = wf.initialMessage || ''
+}
+
+function cancelWorkflowEdit() {
+  editingWorkflowId.value = null
+}
+
+async function saveWorkflow() {
+  const name = wfName.value.trim()
+  if (!name) return
+  const data = {
+    name,
+    description: wfDesc.value.trim() || null,
+    systemPrompt: wfSystemPrompt.value.trim() || null,
+    initialMessage: wfInitialMessage.value.trim() || null,
+  }
+  try {
+    if (editingWorkflowId.value === '__new__') {
+      await api.createWorkflowTemplate(data)
+    } else {
+      await api.updateWorkflowTemplate(editingWorkflowId.value, data)
+    }
+    cancelWorkflowEdit()
+    api.getWorkflowTemplates().then(list => { workflowTemplates.value = list }).catch(() => {})
+  } catch (e) {
+    console.error('Save workflow template failed:', e)
+  }
+}
+
+async function deleteWorkflow(id) {
+  try {
+    await api.deleteWorkflowTemplate(id)
+    if (editingWorkflowId.value === id) cancelWorkflowEdit()
+    api.getWorkflowTemplates().then(list => { workflowTemplates.value = list }).catch(() => {})
+  } catch (e) {
+    console.error('Delete workflow template failed:', e)
   }
 }
 

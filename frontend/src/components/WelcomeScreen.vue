@@ -10,21 +10,42 @@
       <h1>Hi, I'm Ayer.</h1>
       <p class="welcome-subtitle">Ask me anything, I'm here to help.</p>
     </div>
-    <div class="quick-questions-row">
-      <div class="quick-questions" :class="{ 'is-hidden': !visible }">
+
+    <!-- Workflow Templates -->
+    <div v-if="workflows.length > 0" class="workflow-section">
+      <div class="workflow-label">快速开始</div>
+      <div class="workflow-grid">
         <button
-          v-for="q in quickQuestions"
-          :key="q"
-          class="quick-btn"
-          @click="$emit('send', q)"
-        >{{ q }}</button>
+          v-for="wf in workflows"
+          :key="wf.id"
+          class="workflow-card"
+          @click="$emit('createFromTemplate', wf)"
+        >
+          <div class="workflow-card-name">{{ wf.name }}</div>
+          <div v-if="wf.description" class="workflow-card-desc">{{ wf.description }}</div>
+          <div v-if="wf.initialMessage" class="workflow-card-hint">{{ wf.initialMessage.substring(0, 50) }}{{ wf.initialMessage.length > 50 ? '…' : '' }}</div>
+        </button>
       </div>
-      <button class="btn-refresh" title="换一批问题" @click="refresh">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10"/>
-          <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
-        </svg>
-      </button>
+    </div>
+
+    <div class="quick-questions-row">
+      <div v-if="questionsLoading" class="questions-loading">正在生成今日推荐问题…</div>
+      <template v-else-if="quickQuestions.length > 0">
+        <div class="quick-questions" :class="{ 'is-hidden': !visible }">
+          <button
+            v-for="q in quickQuestions"
+            :key="q"
+            class="quick-btn"
+            @click="$emit('send', q)"
+          >{{ q }}</button>
+        </div>
+        <button class="btn-refresh" title="换一批问题" @click="refresh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+          </svg>
+        </button>
+      </template>
     </div>
     <ChatInput :disabled="false" @send="(msg, imgs) => $emit('send', msg, imgs)" />
   </div>
@@ -33,55 +54,78 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import ChatInput from './ChatInput.vue'
+import * as api from '../api/index.js'
 
-defineEmits(['send'])
+defineEmits(['send', 'createFromTemplate'])
 
-const POOL = [
-  '用通俗易懂的方式解释一下什么是机器学习',
-  '帮我写一段快速排序的 Java 代码',
-  '给我讲个冷笑话',
-  '有什么提高工作效率的建议',
-  '如何学好一门新的编程语言？',
-  '帮我解释一下量子计算机的原理',
-  '推荐几本值得一读的科幻小说',
-  '写一首关于秋天的短诗',
-  '什么是 Docker，它解决了什么问题？',
-  '如何克服拖延症？',
-  '帮我解释一下 TCP/IP 协议',
-  '写一段打印斐波那契数列的 Python 代码',
-  '如何快速提高英语口语水平？',
-  '深度学习和机器学习有什么区别？',
-  '推荐几个提高编程效率的工具或插件',
-  '用一句话解释什么是区块链',
-  '帮我写一个正则表达式，匹配邮箱地址',
-  '如何设计一个好的 RESTful API？',
-  '有什么好用的时间管理方法？',
-  '解释一下什么是设计模式，举个例子',
-]
+const CACHE_KEY = () => `daily-questions-${new Date().toISOString().slice(0, 10)}`
 
-function pick() {
-  const pool = [...POOL]
+// Pick 4 random questions from an array
+function pickRandom(pool) {
+  const arr = [...pool]
   const result = []
-  while (result.length < 4) {
-    const i = Math.floor(Math.random() * pool.length)
-    result.push(pool.splice(i, 1)[0])
+  while (result.length < 4 && arr.length > 0) {
+    const i = Math.floor(Math.random() * arr.length)
+    result.push(arr.splice(i, 1)[0])
   }
   return result
 }
 
-const quickQuestions = ref(pick())
+const dailyPool = ref([])
+const quickQuestions = ref([])
 const visible = ref(true)
+const workflows = ref([])
+const questionsLoading = ref(false)
+
+async function loadDailyPool() {
+  // 1. Try localStorage cache for today
+  const key = CACHE_KEY()
+  const cached = localStorage.getItem(key)
+  if (cached) {
+    try {
+      const pool = JSON.parse(cached)
+      if (Array.isArray(pool) && pool.length > 0) {
+        dailyPool.value = pool
+        quickQuestions.value = pickRandom(pool)
+        return
+      }
+    } catch {}
+  }
+  // 2. Fetch from backend (AI-generated)
+  questionsLoading.value = true
+  try {
+    const pool = await api.getDailyQuestions()
+    if (pool.length > 0) {
+      dailyPool.value = pool
+      quickQuestions.value = pickRandom(pool)
+      localStorage.setItem(key, JSON.stringify(pool))
+      // Clean up yesterday's cache entry
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith('daily-questions-') && k !== key) localStorage.removeItem(k)
+      }
+    }
+  } catch {
+    // 3. Silent fallback — questions stay empty, UI hides gracefully
+  } finally {
+    questionsLoading.value = false
+  }
+}
 
 function refresh() {
+  if (dailyPool.value.length === 0) return
   visible.value = false
   setTimeout(() => {
-    quickQuestions.value = pick()
+    quickQuestions.value = pickRandom(dailyPool.value)
     visible.value = true
   }, 280)
 }
 
 let timer
-onMounted(() => { timer = setInterval(refresh, 15000) })
+onMounted(() => {
+  loadDailyPool()
+  timer = setInterval(refresh, 5 * 60 * 1000)
+  api.getWorkflowTemplates().then(list => { workflows.value = list }).catch(() => {})
+})
 onUnmounted(() => { clearInterval(timer) })
 </script>
 
@@ -117,11 +161,81 @@ onUnmounted(() => { clearInterval(timer) })
   font-size: 14px;
 }
 
+/* Workflow templates */
+.workflow-section {
+  width: 100%;
+  max-width: 560px;
+  margin-bottom: 24px;
+}
+
+.workflow-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 10px;
+  text-align: left;
+}
+
+.workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.workflow-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.workflow-card:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-card));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.workflow-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.workflow-card-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.workflow-card-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .quick-questions-row {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-bottom: 24px;
+  min-height: 36px;
+}
+
+.questions-loading {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .quick-questions {
@@ -177,6 +291,9 @@ onUnmounted(() => { clearInterval(timer) })
 }
 
 @media (max-width: 768px) {
+  .workflow-grid {
+    grid-template-columns: 1fr 1fr;
+  }
   .quick-questions {
     flex-direction: column;
     align-items: stretch;

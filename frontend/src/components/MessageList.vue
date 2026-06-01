@@ -20,6 +20,9 @@
         @regenerate="$emit('regenerate')"
         @editMessage="(id, content) => $emit('editMessage', id, content)"
         @deleteMessage="id => $emit('deleteMessage', id)"
+        @forkMessage="id => $emit('forkMessage', id)"
+        @starMessage="id => $emit('starMessage', id)"
+        @rateMessage="(id, v) => $emit('rateMessage', id, v)"
       />
       <div v-if="messages.length === 0" class="empty-messages">
         Send a message to start the conversation.
@@ -37,13 +40,25 @@
 import { ref, watch, nextTick } from 'vue'
 import MessageBubble from './MessageBubble.vue'
 
+function scrollToMessage(messageId) {
+  nextTick(() => {
+    const el = document.getElementById('msg-' + messageId)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('msg-highlight')
+    setTimeout(() => el.classList.remove('msg-highlight'), 2000)
+  })
+}
+
+defineExpose({ scrollToMessage })
+
 const props = defineProps({
   messages: Array,
   loading: Boolean,
   conversationLoading: Boolean
 })
 
-defineEmits(['regenerate', 'editMessage', 'deleteMessage'])
+defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage'])
 
 const listRef = ref(null)
 const showScrollBtn = ref(false)
@@ -77,17 +92,19 @@ watch(() => props.loading, (isLoading) => {
   }
 })
 
-// During streaming, keep following the bottom unless user scrolled up
+// During streaming, keep following the bottom unless user scrolled up.
+// Track length + last message content size — avoids deep traversal of the whole array.
 watch(
-  () => props.messages,
+  () => {
+    const msgs = props.messages
+    const last = msgs[msgs.length - 1]
+    return msgs.length * 1e9 + (last?.content?.length ?? 0) + (last?.reasoning?.length ?? 0)
+  },
   () => {
     nextTick(() => {
-      if (!userScrolledUp.value) {
-        scrollToBottom()
-      }
+      if (!userScrolledUp.value) scrollToBottom()
     })
-  },
-  { deep: true }
+  }
 )
 </script>
 
@@ -145,6 +162,14 @@ watch(
   background: linear-gradient(90deg, var(--border-color) 25%, var(--bg-hover) 50%, var(--border-color) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+:global(.msg-highlight) {
+  animation: msg-flash 2s ease;
+}
+@keyframes msg-flash {
+  0%, 100% { background: transparent; }
+  20% { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 }
 
 @keyframes shimmer {

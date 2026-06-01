@@ -3,6 +3,32 @@
     <div class="chat-top-bar">
       <slot name="hamburger"></slot>
       <div class="top-bar-right">
+        <!-- AI Parameter panel toggle -->
+        <div class="param-wrapper">
+          <button class="btn-icon-sm" :class="{ 'btn-param-active': paramOpen }" title="参数调节" @click="paramOpen = !paramOpen">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+              <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+              <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+            </svg>
+          </button>
+          <Transition name="drop">
+            <div v-if="paramOpen" class="param-panel">
+              <div class="param-title">生成参数</div>
+              <div class="param-row">
+                <label class="param-label">Temperature <span class="param-val">{{ aiParams.temperature.toFixed(1) }}</span></label>
+                <input type="range" min="0" max="2" step="0.1" v-model.number="aiParams.temperature" class="param-slider" />
+                <div class="param-desc">越高越有创意，越低越保守</div>
+              </div>
+              <div class="param-row">
+                <label class="param-label">最大 Token <span class="param-val">{{ aiParams.maxTokens }}</span></label>
+                <input type="range" min="256" max="8192" step="256" v-model.number="aiParams.maxTokens" class="param-slider" />
+              </div>
+              <button class="param-reset" @click="resetParams">恢复默认</button>
+            </div>
+          </Transition>
+        </div>
         <!-- System prompt button -->
         <button v-if="conversation" class="btn-icon-sm" title="系统提示词" @click="openPromptModal">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -108,15 +134,19 @@
       </div>
     </div>
 
-    <WelcomeScreen v-if="!conversation" @send="$emit('send', $event)" />
+    <WelcomeScreen v-if="!conversation" @send="$emit('send', $event)" @createFromTemplate="$emit('createFromTemplate', $event)" />
     <template v-if="conversation">
       <MessageList
+        ref="messageListRef"
         :messages="conversation.messages || []"
         :loading="loading"
         :conversationLoading="conversationLoading"
         @regenerate="$emit('regenerate')"
         @editMessage="(id, content) => $emit('editMessage', id, content)"
         @deleteMessage="id => $emit('deleteMessage', id)"
+        @forkMessage="id => $emit('forkMessage', id)"
+        @starMessage="id => $emit('starMessage', id)"
+        @rateMessage="(id, v) => $emit('rateMessage', id, v)"
       />
       <ChatInput
         ref="chatInputRef"
@@ -142,7 +172,7 @@ const chatInputRef = ref(null)
 function focusInput() {
   chatInputRef.value?.focus()
 }
-defineExpose({ focusInput })
+
 
 const props = defineProps({
   conversation: Object,
@@ -153,10 +183,19 @@ const props = defineProps({
   voiceLang: { type: String, default: 'zh-CN' }
 })
 
-const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'update:model', 'updateSystemPrompt', 'toast'])
+const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'createFromTemplate', 'update:model', 'updateSystemPrompt', 'toast', 'updateAiParams'])
 
+const messageListRef = ref(null)
 const open = ref(false)
 const exportOpen = ref(false)
+const paramOpen = ref(false)
+const aiParams = ref({ temperature: 0.7, maxTokens: 2048 })
+function resetParams() { aiParams.value = { temperature: 0.7, maxTokens: 2048 } }
+defineExpose({
+  focusInput,
+  aiParams,
+  scrollToMessage: (id) => messageListRef.value?.scrollToMessage(id)
+})
 // shareToken is a temporary ref — set briefly when sharing to show the popup URL,
 // cleared when popup closes so the button returns to gray.
 const shareToken = ref(null)
@@ -558,6 +597,22 @@ function doExport(format) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+.param-wrapper { position: relative; }
+.btn-param-active { color: var(--accent) !important; border-color: var(--accent) !important; }
+.param-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); width: 240px;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px;
+  padding: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 20;
+}
+.param-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; }
+.param-row { margin-bottom: 12px; }
+.param-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.param-val { color: var(--accent); font-weight: 600; }
+.param-slider { width: 100%; accent-color: var(--accent); }
+.param-desc { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+.param-reset { font-size: 11px; color: var(--text-muted); background: none; padding: 4px 8px; border-radius: 5px; transition: all 0.15s; border: 1px solid var(--border-color); }
+.param-reset:hover { color: var(--text-primary); border-color: var(--text-secondary); }
 
 /* Dropdown transition */
 .drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }

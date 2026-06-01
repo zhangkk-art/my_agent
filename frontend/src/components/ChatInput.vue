@@ -13,6 +13,16 @@
         </button>
       </div>
     </div>
+    <!-- Prompt history dropdown -->
+    <div v-if="historyOpen && promptHistory.length > 0" class="prompt-history-dropdown">
+      <div class="history-header">最近使用</div>
+      <div
+        v-for="(h, i) in promptHistory"
+        :key="i"
+        class="history-item"
+        @click="useHistory(h)"
+      >{{ h.length > 80 ? h.substring(0, 80) + '…' : h }}</div>
+    </div>
     <div class="chat-input-wrapper">
       <input
         ref="fileInput"
@@ -39,6 +49,21 @@
         @input="autoResize"
         @paste="onPaste"
       ></textarea>
+      <!-- Prompt history toggle -->
+      <button
+        v-if="promptHistory.length > 0"
+        class="btn-history"
+        :class="{ active: historyOpen }"
+        title="历史记录"
+        @click="historyOpen = !historyOpen"
+        type="button"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3h6l1 9H2L3 3z"/><path d="M13 3h6l2 9H12L13 3z"/>
+          <path d="M2 12h20v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2z"/>
+          <path d="M8 20h8M12 16v4"/>
+        </svg>
+      </button>
       <!-- Voice input -->
       <button
         class="btn-voice"
@@ -112,8 +137,23 @@ const isRecording = ref(false)
 const webSearch = ref(false)
 const tipMsg = ref('')
 const tipType = ref('error')
+const historyOpen = ref(false)
+const promptHistory = ref(JSON.parse(localStorage.getItem('prompt-history') || '[]'))
 let recognition = null
 let tipTimer = null
+
+function saveToHistory(msg) {
+  if (!msg || msg.length < 3) return
+  const list = [msg, ...promptHistory.value.filter(h => h !== msg)].slice(0, 10)
+  promptHistory.value = list
+  localStorage.setItem('prompt-history', JSON.stringify(list))
+}
+
+function useHistory(h) {
+  text.value = h
+  historyOpen.value = false
+  nextTick(() => inputRef.value?.focus())
+}
 
 function showTip(msg, type = 'error', duration = 3000) {
   clearTimeout(tipTimer)
@@ -237,7 +277,9 @@ function toggleVoice() {
 function send() {
   const msg = text.value.trim()
   if ((!msg && images.value.length === 0) || props.disabled) return
+  saveToHistory(msg)
   emit('send', msg, [...images.value], webSearch.value)
+  historyOpen.value = false
   text.value = ''
   images.value = []
   nextTick(() => {
@@ -443,6 +485,30 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+.btn-history {
+  flex-shrink: 0; width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; color: var(--text-muted); border-radius: 7px; transition: all 0.15s;
+}
+.btn-history:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-history.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+.prompt-history-dropdown {
+  max-width: 800px; margin: 0 auto 6px;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); overflow: hidden;
+}
+.history-header {
+  padding: 8px 14px 4px; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.history-item {
+  padding: 8px 14px; font-size: 13px; color: var(--text-secondary);
+  cursor: pointer; transition: background 0.1s; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.history-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .btn-stop {
   flex-shrink: 0;

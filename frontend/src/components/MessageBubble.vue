@@ -1,5 +1,5 @@
 <template>
-  <div class="message-row" :class="message.role">
+  <div class="message-row" :class="message.role" :id="'msg-' + message.id">
     <div class="message-bubble" @mouseenter="hovered = true" @mouseleave="hovered = false">
       <div class="message-header">
         <span class="message-role">
@@ -49,6 +49,49 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"/>
               <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+          </button>
+          <!-- TTS -->
+          <button class="btn-action" :title="isSpeaking ? '停止朗读' : '朗读'" @click="toggleTts">
+            <svg v-if="!isSpeaking" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>
+            </svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+            </svg>
+          </button>
+          <!-- Star -->
+          <button class="btn-action" :class="{ 'btn-starred': message.starred }" title="收藏" @click="toggleStar">
+            <svg width="14" height="14" viewBox="0 0 24 24" :fill="message.starred ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </button>
+          <!-- Rating (assistant only) -->
+          <template v-if="message.role === 'assistant'">
+            <button class="btn-action" :class="{ 'btn-rated-up': message.rating === 1 }" title="好评" @click="rate(1)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/>
+                <path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
+              </svg>
+            </button>
+            <button class="btn-action" :class="{ 'btn-rated-down': message.rating === -1 }" title="差评" @click="rate(-1)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"/>
+                <path d="M17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/>
+              </svg>
+            </button>
+          </template>
+          <button
+            class="btn-action"
+            title="从此处分叉新对话"
+            @click="$emit('forkMessage', message.id)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="6" y1="3" x2="6" y2="15"/>
+              <circle cx="18" cy="6" r="3"/>
+              <circle cx="6" cy="18" r="3"/>
+              <path d="M18 9a9 9 0 01-9 9"/>
             </svg>
           </button>
           <button
@@ -101,18 +144,20 @@
           </div>
         </div>
         <!-- Assistant: rendered markdown — during streaming renders escaped plain text to avoid flash -->
-        <div v-if="message.role === 'assistant'"
-             class="markdown-body"
-             :class="{ 'is-streaming': isStreamingMsg && message.content }"
-             v-html="renderedContent"
-             @click="handleContentClick">
-        </div>
-        <!-- Token usage for assistant messages -->
-        <div v-if="message.role === 'assistant' && !isStreamingMsg && message.totalTokens" class="token-footer">
-          🧮 {{ message.totalTokens >= 1000 ? (message.totalTokens / 1000).toFixed(1) + 'k' : message.totalTokens }} tokens
-          <span v-if="message.promptTokens"> · 输入 {{ message.promptTokens }}</span>
-          <span v-if="message.completionTokens"> · 输出 {{ message.completionTokens }}</span>
-        </div>
+        <template v-if="message.role === 'assistant'">
+          <div
+               class="markdown-body"
+               :class="{ 'is-streaming': isStreamingMsg && message.content }"
+               v-html="renderedContent"
+               @click="handleContentClick">
+          </div>
+          <!-- Token usage for assistant messages -->
+          <div v-if="!isStreamingMsg && message.totalTokens" class="token-footer">
+            🧮 {{ message.totalTokens >= 1000 ? (message.totalTokens / 1000).toFixed(1) + 'k' : message.totalTokens }} tokens
+            <span v-if="message.promptTokens"> · 输入 {{ message.promptTokens }}</span>
+            <span v-if="message.completionTokens"> · 输出 {{ message.completionTokens }}</span>
+          </div>
+        </template>
         <!-- User: images + raw text -->
         <template v-else>
           <div v-if="message.images && message.images.length > 0" class="message-images">
@@ -142,6 +187,7 @@ import { ref, computed, nextTick } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import katex from 'katex'
+import DOMPurify from 'dompurify'
 import { timeAgo } from '../utils/time.js'
 
 const SAFE_URL_PROTOCOLS = /^(https?:|mailto:)/i
@@ -153,13 +199,10 @@ function sanitizeUrl(url) {
 }
 
 function sanitizeHtml(html) {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<\/?script[^>]*>/gi, '')
-    .replace(/\bon\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\bon\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/\bon\w+\s*=\s*[^\s>]+/gi, '')
-    .replace(/(href|src)\s*=\s*["']?\s*(javascript|vbscript|data)[^"'\s>]*/gi, '$1="#"')
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ['target', 'rel'],
+  })
 }
 
 marked.setOptions({ breaks: true })
@@ -239,7 +282,7 @@ const props = defineProps({
   isLastAi: Boolean
 })
 
-const emit = defineEmits(['regenerate', 'editMessage', 'deleteMessage'])
+const emit = defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage'])
 
 const hovered = ref(false)
 const copied = ref(false)
@@ -249,6 +292,32 @@ const editInput = ref(null)
 const previewImage = ref(null)
 const confirmingDelete = ref(false)
 const thinkingExpanded = ref(false)
+const isSpeaking = ref(false)
+
+function getVoiceLang() {
+  try { return JSON.parse(localStorage.getItem('app-settings') || '{}').voiceLang || 'zh-CN' } catch { return 'zh-CN' }
+}
+
+function toggleTts() {
+  const synth = window.speechSynthesis
+  if (!synth) return
+  if (isSpeaking.value) {
+    synth.cancel()
+    isSpeaking.value = false
+    return
+  }
+  const plain = (props.message.content || '').replace(/```[\s\S]*?```/g, '代码块').replace(/[#*`_~>]/g, '').trim()
+  const utt = new SpeechSynthesisUtterance(plain)
+  utt.lang = getVoiceLang()
+  utt.onend = () => { isSpeaking.value = false }
+  utt.onerror = () => { isSpeaking.value = false }
+  synth.cancel()
+  synth.speak(utt)
+  isSpeaking.value = true
+}
+
+function toggleStar() { emit('starMessage', props.message.id) }
+function rate(val) { emit('rateMessage', props.message.id, props.message.rating === val ? null : val) }
 
 // Start expanded during streaming so user sees the thinking process unfold
 if (props.message.id && props.message.id.startsWith('streaming-')) {
@@ -500,6 +569,10 @@ function doDelete() {
 .btn-edit-cancel:hover {
   background: var(--border-color);
 }
+
+.btn-starred { color: #f59e0b !important; }
+.btn-rated-up { color: #22c55e !important; }
+.btn-rated-down { color: var(--danger) !important; }
 
 .markdown-body.is-streaming::after {
   content: '▌';

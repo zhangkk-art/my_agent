@@ -95,16 +95,16 @@ export async function sendMessage(conversationId, message, model) {
   return res.json();
 }
 
-export function sendMessageStream(conversationId, message, model, webSearch, onReasoning, onChunk, onDone, onError, signal) {
-  streamSse(`${BASE_URL}/chat/stream`, { conversationId, message, model, webSearch }, onReasoning, onChunk, onDone, onError, signal);
+export function sendMessageStream(conversationId, message, model, webSearch, temperature, maxTokens, onReasoning, onChunk, onDone, onError, signal) {
+  streamSse(`${BASE_URL}/chat/stream`, { conversationId, message, model, webSearch, temperature, maxTokens }, onReasoning, onChunk, onDone, onError, signal);
 }
 
-export function sendImageStream(conversationId, message, model, images, webSearch, onReasoning, onChunk, onDone, onError, signal) {
-  streamSse(`${BASE_URL}/chat/image`, { conversationId, message, model, images, webSearch }, onReasoning, onChunk, onDone, onError, signal);
+export function sendImageStream(conversationId, message, model, images, webSearch, temperature, maxTokens, onReasoning, onChunk, onDone, onError, signal) {
+  streamSse(`${BASE_URL}/chat/image`, { conversationId, message, model, images, webSearch, temperature, maxTokens }, onReasoning, onChunk, onDone, onError, signal);
 }
 
-export function regenerateStream(conversationId, message, model, onReasoning, onChunk, onDone, onError, signal) {
-  streamSse(`${BASE_URL}/chat/regenerate`, { conversationId, message, model }, onReasoning, onChunk, onDone, onError, signal);
+export function regenerateStream(conversationId, message, model, webSearch, onReasoning, onChunk, onDone, onError, signal) {
+  streamSse(`${BASE_URL}/chat/regenerate`, { conversationId, message, model, webSearch }, onReasoning, onChunk, onDone, onError, signal);
 }
 
 export async function getConversations() {
@@ -190,6 +190,103 @@ export async function shareConversation(id) {
 export async function revokeShare(id) {
   const res = await fetch(`${BASE_URL}/conversations/${id}/share`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to revoke share');
+}
+
+export async function pinConversation(id) {
+  const res = await fetch(`${BASE_URL}/conversations/${id}/pin`, { method: 'PATCH' });
+  if (!res.ok) throw new Error('Failed to toggle pin');
+  return res.json();
+}
+
+export async function setConversationFolder(id, folderName) {
+  const res = await fetch(`${BASE_URL}/conversations/${id}/folder`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folderName: folderName || null })
+  });
+  if (!res.ok) throw new Error('Failed to set folder');
+  return res.json();
+}
+
+export async function importConversation(title, messages) {
+  const res = await fetch(`${BASE_URL}/conversations/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, messages })
+  });
+  if (!res.ok) throw new Error('Failed to import conversation');
+  return res.json();
+}
+
+export async function starMessage(id) {
+  const res = await fetch(`${BASE_URL}/messages/${id}/star`, { method: 'PATCH' });
+  if (!res.ok) throw new Error('Failed to star message');
+  return res.json();
+}
+
+export async function rateMessage(id, rating) {
+  const res = await fetch(`${BASE_URL}/messages/${id}/rating`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating })
+  });
+  if (!res.ok) throw new Error('Failed to rate message');
+  return res.json();
+}
+
+export async function getStarredMessages() {
+  const res = await fetch(`${BASE_URL}/messages/starred`);
+  if (!res.ok) throw new Error('Failed to fetch starred messages');
+  return res.json();
+}
+
+export async function forkConversation(id, messageId) {
+  const res = await fetch(`${BASE_URL}/conversations/${id}/fork`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId })
+  });
+  if (!res.ok) throw new Error('Failed to fork conversation');
+  return res.json();
+}
+
+// ── Workflow Templates ──
+
+export async function getWorkflowTemplates() {
+  const res = await fetch(`${BASE_URL}/workflow-templates`);
+  if (!res.ok) throw new Error('Failed to fetch workflow templates');
+  return res.json();
+}
+
+export async function createWorkflowTemplate(data) {
+  const res = await fetch(`${BASE_URL}/workflow-templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error('Failed to create workflow template');
+  return res.json();
+}
+
+export async function updateWorkflowTemplate(id, data) {
+  const res = await fetch(`${BASE_URL}/workflow-templates/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error('Failed to update workflow template');
+  return res.json();
+}
+
+export async function deleteWorkflowTemplate(id) {
+  const res = await fetch(`${BASE_URL}/workflow-templates/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete workflow template');
+}
+
+export async function getDailyQuestions() {
+  const res = await fetch(`${BASE_URL}/questions/daily`);
+  if (!res.ok) throw new Error('Failed to fetch daily questions');
+  return res.json();
 }
 
 export async function getSharedConversation(token) {
