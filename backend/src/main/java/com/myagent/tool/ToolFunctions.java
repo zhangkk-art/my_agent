@@ -21,7 +21,7 @@ public class ToolFunctions {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newBuilder().build();
 
-    @Tool(description = "Get the current real date and time. MUST be called EVERY time the user asks about time/date/today/now — never reuse time values from conversation history, as they become stale immediately.")
+    @Tool(description = "获取当前真实的日期和时间。当用户询问任何与当前时间/日期有关的问题时必须调用，包括但不限于：几点了、现在几点、今天几号、今天星期几、今天日期、现在是什么时间、当前时间、今天是哪天等各种口语和书面表达。每次询问都必须重新调用此工具，绝不能使用对话历史中已有的任何时间数据。")
     public TimeResponse getCurrentTime(TimeRequest request) {
         ZoneId zone = ZoneId.of("Asia/Shanghai");
         try {

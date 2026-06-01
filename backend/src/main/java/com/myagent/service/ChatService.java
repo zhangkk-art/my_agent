@@ -81,22 +81,8 @@ public class ChatService {
      */
     private String buildDynamicSystemPrompt(String conversationId, String userMessage, boolean webSearch) {
         String base = buildSystemPrompt(conversationId);
-        String requiredTool = detectRequiredTool(userMessage);
 
-        if ("getCurrentTime".equals(requiredTool)) {
-            String currentTime = toolFunctions.getCurrentTime(new ToolFunctions.TimeRequest(null)).datetime();
-            base += "\n\n【实时数据】当前时间：" + currentTime
-                  + "。请直接使用此时间回答，无需调用工具，不要参考历史消息中的任何时间数据。";
-            log.info("Pre-fetched current time for system prompt: {}", currentTime);
-        } else if ("getWeather".equals(requiredTool)) {
-            String city = extractCity(userMessage);
-            String weather = toolFunctions.getWeather(new ToolFunctions.WeatherRequest(city)).weather();
-            base += "\n\n【实时数据】以下是刚刚获取的最新天气信息：\n" + weather
-                  + "\n请直接使用以上数据回答，无需调用工具，不要参考历史消息中的任何天气数据。";
-            log.info("Pre-fetched weather for city '{}' for system prompt", city);
-        }
-
-        if (!webSearch && requiredTool == null && detectWebSearchNeed(userMessage)) {
+        if (!webSearch && detectWebSearchNeed(userMessage)) {
             base += "\n\n【系统指令】用户的问题需要联网搜索才能准确回答，但用户尚未开启联网搜索功能。"
                   + "请友好地告知用户：这个问题需要联网搜索，请点击输入框左侧的地球图标开启联网搜索后再提问。"
                   + "绝对不要猜测或编造答案——没有联网搜索你无法获取这些实时信息。";
@@ -107,33 +93,6 @@ public class ChatService {
                     "必须调用 searchWeb 工具搜索，绝对不要使用对话历史中旧的搜索结果——那些数据已经过时。";
         }
         return base;
-    }
-
-    /**
-     * Extract city name from a weather-related query.
-     * Checks known cities first, then falls back to text before weather keywords.
-     */
-    private String extractCity(String userMessage) {
-        String[] knownCities = {
-            "北京", "上海", "广州", "深圳", "成都", "杭州", "南京", "武汉", "西安", "重庆",
-            "天津", "苏州", "长沙", "郑州", "青岛", "厦门", "济南", "合肥", "福州", "昆明",
-            "哈尔滨", "大连", "宁波", "无锡", "沈阳", "南昌", "贵阳", "太原", "石家庄",
-            "Beijing", "Shanghai", "Guangzhou", "Shenzhen", "Chengdu", "Hangzhou",
-            "Tokyo", "Seoul", "New York", "London", "Paris", "Singapore"
-        };
-        for (String city : knownCities) {
-            if (userMessage.contains(city)) return city;
-        }
-        // Fallback: grab text before a weather keyword and strip non-city characters
-        for (String kw : new String[]{"天气", "气温", "温度"}) {
-            int idx = userMessage.indexOf(kw);
-            if (idx > 0) {
-                String before = userMessage.substring(Math.max(0, idx - 4), idx).trim();
-                before = before.replaceAll("[的今明后这那天]", "").trim();
-                if (before.length() >= 2) return before;
-            }
-        }
-        return "Beijing";
     }
 
     private String detectRequiredTool(String userMessage) {
