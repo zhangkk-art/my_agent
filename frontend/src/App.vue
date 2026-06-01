@@ -19,6 +19,7 @@
       @import="handleImportConversation"
       @bulkDelete="handleBulkDelete"
       @openSettings="showSettings = true"
+      @openShortcuts="showShortcuts = true"
     />
     <div
       class="resize-handle"
@@ -63,16 +64,20 @@
         @clearAll="handleClearAll"
       />
     </Transition>
+    <Transition name="modal">
+      <ShortcutsModal v-if="showShortcuts" @close="showShortcuts = false" />
+    </Transition>
     <Toast ref="toastRef" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
 import Toast from './components/Toast.vue'
 import SettingsModal from './components/SettingsModal.vue'
+import ShortcutsModal from './components/ShortcutsModal.vue'
 import SharedView from './components/SharedView.vue'
 import * as api from './api/index.js'
 
@@ -106,6 +111,7 @@ const chatAreaRef = ref(null)
 const toastRef = ref(null)
 const selectedModel = ref(localStorage.getItem('model') || 'deepseek')
 const showSettings = ref(false)
+const showShortcuts = ref(false)
 const settings = ref(loadSettings())
 // Track the last webSearch state so regenerate can reuse it
 const lastWebSearch = ref(false)
@@ -179,13 +185,55 @@ watch(currentConversation, (conv) => {
   document.title = conv ? conv.title + ' - Ayer' : 'Ayer'
 })
 
+function handleGlobalKeydown(e) {
+  const mod = e.ctrlKey || e.metaKey
+
+  // Esc: close modals in priority order, then stop streaming
+  if (e.key === 'Escape') {
+    if (showShortcuts.value) { showShortcuts.value = false; return }
+    if (showSettings.value) { showSettings.value = false; return }
+    if (loading.value) { stopStream(); return }
+    return
+  }
+
+  // Ctrl/Cmd + / — toggle shortcuts help (fires even in inputs)
+  if (mod && e.key === '/') {
+    e.preventDefault()
+    showShortcuts.value = !showShortcuts.value
+    return
+  }
+
+  // Ctrl/Cmd + K — focus sidebar search (fires even in inputs)
+  if (mod && e.key === 'k') {
+    e.preventDefault()
+    sidebarRef.value?.focusSearch()
+    return
+  }
+
+  // Don't fire remaining shortcuts when user is typing in an input or textarea
+  const tag = e.target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+
+  // Ctrl/Cmd + , — open settings
+  if (mod && e.key === ',') {
+    e.preventDefault()
+    showSettings.value = true
+    return
+  }
+}
+
 onMounted(async () => {
   applyFontSize(settings.value.fontSize)
+  window.addEventListener('keydown', handleGlobalKeydown)
   try {
     conversations.value = await api.getConversations()
   } catch (e) {
     toastRef.value?.show('加载会话列表失败', 'error')
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
 })
 
 async function selectConversation(id) {

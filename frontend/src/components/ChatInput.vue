@@ -139,6 +139,7 @@ const tipMsg = ref('')
 const tipType = ref('error')
 const historyOpen = ref(false)
 const promptHistory = ref(JSON.parse(localStorage.getItem('prompt-history') || '[]'))
+const historyIndex = ref(-1)  // -1 = not navigating
 let recognition = null
 let tipTimer = null
 
@@ -179,6 +180,27 @@ function handleKeydown(e) {
       e.preventDefault()
       send()
     }
+    return
+  }
+  // ↑ when input is empty: cycle backward through prompt history
+  if (e.key === 'ArrowUp' && !text.value.trim() && promptHistory.value.length > 0) {
+    e.preventDefault()
+    historyIndex.value = Math.min(historyIndex.value + 1, promptHistory.value.length - 1)
+    text.value = promptHistory.value[historyIndex.value]
+    nextTick(adjustHeight)
+    return
+  }
+  // ↓ to cycle forward (or clear) when navigating history
+  if (e.key === 'ArrowDown' && historyIndex.value >= 0) {
+    e.preventDefault()
+    historyIndex.value--
+    text.value = historyIndex.value >= 0 ? promptHistory.value[historyIndex.value] : ''
+    nextTick(adjustHeight)
+    return
+  }
+  // Any other key resets history navigation index
+  if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    historyIndex.value = -1
   }
 }
 
@@ -280,6 +302,7 @@ function send() {
   saveToHistory(msg)
   emit('send', msg, [...images.value], webSearch.value)
   historyOpen.value = false
+  historyIndex.value = -1
   text.value = ''
   images.value = []
   nextTick(() => {

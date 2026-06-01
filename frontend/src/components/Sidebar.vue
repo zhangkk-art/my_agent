@@ -41,6 +41,12 @@
             <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
           </svg>
         </button>
+        <button class="btn-icon" title="快捷键 (Ctrl+/)" @click="$emit('openShortcuts')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </button>
         <button class="btn-new-chat" @click="$emit('new')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -61,7 +67,7 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      <input v-model="searchQuery" class="search-input" placeholder="Search conversations..." @click.stop />
+      <input ref="searchInputRef" v-model="searchQuery" class="search-input" placeholder="Search conversations..." @click.stop />
       <button class="btn-star-filter" :class="{ active: showStarred }" title="收藏的消息" @click="toggleStarred">
         <svg width="13" height="13" viewBox="0 0 24 24" :fill="showStarred ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -184,7 +190,9 @@ const props = defineProps({
   width: { type: Number, default: 280 }
 })
 
-const emit = defineEmits(['select', 'selectMessage', 'new', 'delete', 'rename', 'openSettings', 'pin', 'setFolder', 'import', 'bulkDelete'])
+const emit = defineEmits(['select', 'selectMessage', 'new', 'delete', 'rename', 'openSettings', 'openShortcuts', 'pin', 'setFolder', 'import', 'bulkDelete'])
+
+const searchInputRef = ref(null)
 
 const renamingId = ref(null)
 const renameText = ref('')
@@ -335,7 +343,12 @@ async function onImportFile(e) {
   } catch (err) { alert('导入失败: ' + err.message) }
 }
 
-defineExpose({ sidebarOpen })
+function focusSearch() {
+  sidebarOpen.value = true
+  nextTick(() => searchInputRef.value?.focus())
+}
+
+defineExpose({ sidebarOpen, focusSearch })
 </script>
 
 <style scoped>
