@@ -261,7 +261,7 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/ai_chat?createDatabaseIfNotExist=true
     username: root
-    password: ${MYSQL_PASSWORD:062017}
+    password: ${MYSQL_PASSWORD}
   ai:
     openai:
       api-key: ${DEEPSEEK_API_KEY}
