@@ -23,10 +23,12 @@
 ### 对话核心
 - **多模型切换** — DeepSeek / Qwen，顶栏一键切换
 - **SSE 流式响应** — AsyncContext + Reactor Flux，逐字实时输出，可中途停止
+- **中断续传** — 停止后保存断点内容，消息底部显示「继续生成」按钮，追加而非重发
 - **思维链展示** — DeepSeek-R1 推理过程可展开/折叠
 - **Markdown 渲染** — 代码语法高亮、表格、KaTeX 数学公式（行内 + 块级）
 - **Token 用量** — 每条回复底部显示输入/输出/总 Token 数
 - **参数调节** — 顶栏面板调节 Temperature / Max Tokens
+- **键盘快捷键** — Ctrl+K 搜索、Ctrl+Enter 发送、Ctrl+/ 帮助面板、↑↓ 历史记录、Esc 停止
 
 ### 消息操作
 - 编辑 / 删除 / 重新生成
@@ -181,6 +183,7 @@ my_agent/
             ├── WelcomeScreen.vue               # 欢迎页（今日推荐 + Workflow 模板）
             ├── SettingsModal.vue               # 设置面板（外观 + 模板管理）
             ├── SharedView.vue                  # 分享对话只读视图
+            ├── ShortcutsModal.vue              # 键盘快捷键帮助弹窗
             └── Toast.vue                       # 全局通知
 ```
 
@@ -203,6 +206,7 @@ my_agent/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/chat/stream` | SSE 流式对话（支持 webSearch / temperature / maxTokens）|
+| POST | `/api/chat/continue` | 从断点续传，追加内容到已有消息 |
 | POST | `/api/chat/image` | 图片分析（流式，base64 多图）|
 | POST | `/api/chat/regenerate` | 重新生成最后一条 AI 回复 |
 
@@ -232,6 +236,8 @@ my_agent/
 | DELETE | `/api/messages/{id}` | 删除 |
 | PATCH | `/api/messages/{id}/star` | 切换收藏 |
 | PATCH | `/api/messages/{id}/rating` | 设置评分（1 / -1 / null）|
+| PATCH | `/api/messages/{id}/interrupted` | 更新中断消息内容并标记 interrupted |
+| POST | `/api/messages/save-partial` | 保存流式中断的部分内容 |
 | GET | `/api/messages/search?q=` | 全文搜索 |
 | GET | `/api/messages/starred` | 获取所有收藏消息 |
 
@@ -275,9 +281,11 @@ app:
 
 ### 工作原理
 
-**时间/天气预注入**：用户发消息前，后端识别意图后主动拉取当前时间或天气，直接写入系统提示词，无需模型侧 Function Calling，延迟更低。
+**时间/天气 Function Calling**：`ToolFunctions` 中注册 `getCurrentTime` / `getWeather` 两个 `@Tool`，Spring AI 在 `Flux<ChatResponse>` 内部透明执行——模型判断需要工具时自动调用、注入结果，再继续生成。历史对话中的旧时间/天气消息对（`shouldRedact` 检测）会在下次询问前从上下文中移除，防止模型锚定过期数据。
 
 **联网搜索**：前端开关开启后，后端调用 BochaAI 搜索 API，将结果摘要注入系统提示词，历史对话中的旧搜索结果自动失效，确保每次回答基于最新数据。
+
+**中断续传**：用户点击停止时，前端立即 `POST /api/messages/save-partial` 保存已流出内容（`interrupted=true`），消息气泡显示「继续生成」按钮；点击后调用 `POST /api/chat/continue`，后端以截断历史 + 合成"请继续"消息重建上下文并追加输出，完成后清除 `interrupted` 标记。
 
 **流式连接断开处理**：用户点击停止或关闭页面时，前端 `AbortController` 断开连接，后端捕获 `IOException` 后取消 Reactor 订阅，已流出的内容正常保存。
 
