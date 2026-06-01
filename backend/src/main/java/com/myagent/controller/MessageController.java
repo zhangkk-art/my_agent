@@ -5,6 +5,7 @@ import com.myagent.mapper.ConversationMapper;
 import com.myagent.mapper.MessageMapper;
 import com.myagent.model.Conversation;
 import com.myagent.model.Message;
+import com.myagent.service.ChatService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,10 +21,12 @@ public class MessageController {
 
     private final MessageMapper messageMapper;
     private final ConversationMapper conversationMapper;
+    private final ChatService chatService;
 
-    public MessageController(MessageMapper messageMapper, ConversationMapper conversationMapper) {
+    public MessageController(MessageMapper messageMapper, ConversationMapper conversationMapper, ChatService chatService) {
         this.messageMapper = messageMapper;
         this.conversationMapper = conversationMapper;
+        this.chatService = chatService;
     }
 
     @GetMapping("/search")
@@ -84,6 +87,32 @@ public class MessageController {
         if (message == null) return ResponseEntity.notFound().build();
         Object r = body.get("rating");
         message.setRating(r != null ? ((Number) r).intValue() : null);
+        messageMapper.updateById(message);
+        return ResponseEntity.ok(message);
+    }
+
+    /** Save a partial (interrupted) assistant message; returns the new Message with its id. */
+    @PostMapping("/save-partial")
+    public ResponseEntity<Message> savePartial(@RequestBody Map<String, String> body) {
+        String conversationId = body.get("conversationId");
+        String content = body.get("content");
+        String reasoning = body.get("reasoning");
+        if (conversationId == null || conversationId.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        Message saved = chatService.saveInterruptedResponse(conversationId, content, reasoning);
+        return ResponseEntity.ok(saved);
+    }
+
+    /** Update content and mark a message as interrupted (used when continuation is stopped). */
+    @PatchMapping("/{id}/interrupted")
+    public ResponseEntity<Message> markInterrupted(@PathVariable String id,
+                                                    @RequestBody Map<String, String> body) {
+        Message message = messageMapper.selectById(id);
+        if (message == null) return ResponseEntity.notFound().build();
+        String content = body.get("content");
+        if (content != null) message.setContent(content);
+        message.setInterrupted(true);
         messageMapper.updateById(message);
         return ResponseEntity.ok(message);
     }

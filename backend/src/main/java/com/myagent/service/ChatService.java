@@ -464,6 +464,58 @@ public class ChatService {
         return new StreamContext(conv.getId(), flux);
     }
 
+    /** Save a partially-streamed assistant response as interrupted. */
+    @Transactional
+    public Message saveInterruptedResponse(String conversationId, String content, String reasoning) {
+        Message saved = insertMessage(conversationId, "assistant", content != null ? content : "");
+        saved.setInterrupted(true);
+        if (reasoning != null && !reasoning.isBlank()) {
+            saved.setReasoning(reasoning);
+        }
+        messageMapper.updateById(saved);
+        return saved;
+    }
+
+    /** Append new continuation content to an existing message; set interrupted accordingly. */
+    @Transactional
+    public void appendToMessage(String messageId, String additionalContent, boolean interrupted) {
+        Message msg = messageMapper.selectById(messageId);
+        if (msg == null) return;
+        String existing = msg.getContent() != null ? msg.getContent() : "";
+        msg.setContent(existing + additionalContent);
+        msg.setInterrupted(interrupted);
+        messageMapper.updateById(msg);
+    }
+
+    /** Build a stream that continues from a previously interrupted assistant message. */
+    public StreamContext continueStream(String conversationId, String messageId, String model,
+                                        Double temperature, Integer maxTokens) {
+        Conversation conv = conversationService.getConversation(conversationId);
+        List<Message> msgs = conv.getMessages();
+
+        List<org.springframework.ai.chat.messages.Message> history = new ArrayList<>();
+        for (Message msg : msgs) {
+            if ("user".equals(msg.getRole())) {
+                history.add(new UserMessage(msg.getContent() != null ? msg.getContent() : ""));
+            } else if ("assistant".equals(msg.getRole())) {
+                history.add(new AssistantMessage(msg.getContent() != null ? msg.getContent() : ""));
+            }
+            if (msg.getId().equals(messageId)) break;
+        }
+        // Synthetic user message asking to continue — not persisted
+        history.add(new UserMessage(
+            "请继续你上面未完成的回答，从中断处接着输出，不要重复已经输出过的内容。"));
+
+        var spec = selectClient(model).prompt()
+                .system(buildSystemPrompt(conversationId))
+                .messages(history);
+        applyOptions(spec, temperature, maxTokens);
+        spec.toolCallbacks(getFileSystemTools());
+        spec.tools(toolFunctions);
+        Flux<ChatResponse> flux = spec.stream().chatResponse();
+        return new StreamContext(conversationId, flux);
+    }
+
     public StreamContext regenerateStream(String conversationId, String userMessage, String model, boolean webSearch) {
         Conversation conv = conversationService.prepareForRegenerate(conversationId, userMessage);
 

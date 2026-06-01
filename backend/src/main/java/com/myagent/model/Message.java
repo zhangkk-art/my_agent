@@ -19,6 +19,7 @@ public class Message {
     private Integer totalTokens;
     private Boolean starred;
     private Integer rating;
+    private Boolean interrupted;
     private LocalDateTime createdAt;
 
     public Message() {}
@@ -51,6 +52,8 @@ public class Message {
     public void setStarred(Boolean starred) { this.starred = starred; }
     public Integer getRating() { return rating; }
     public void setRating(Integer rating) { this.rating = rating; }
+    public Boolean getInterrupted() { return interrupted; }
+    public void setInterrupted(Boolean interrupted) { this.interrupted = interrupted; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

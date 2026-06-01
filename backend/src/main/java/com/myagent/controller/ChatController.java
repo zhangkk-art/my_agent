@@ -72,6 +72,16 @@ public class ChatController {
                 request.getTemperature(), request.getMaxTokens()));
     }
 
+    @PostMapping(value = "/chat/continue", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public void continueGeneration(@RequestBody ChatRequest request,
+                                   HttpServletRequest req,
+                                   HttpServletResponse resp) {
+        doStreamAppend(req, resp,
+                chatService.continueStream(request.getConversationId(), request.getMessageId(),
+                        request.getModel(), request.getTemperature(), request.getMaxTokens()),
+                request.getMessageId());
+    }
+
     @PostMapping(value = "/chat/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public void regenerate(@RequestBody ChatRequest request,
                            HttpServletRequest req,
@@ -196,6 +206,91 @@ public class ChatController {
             });
         } catch (IOException e) {
             log.error("Failed to initialize SSE stream for conversation {}", ctx.conversationId(), e);
+            asyncCtx.complete();
+        }
+    }
+
+    /**
+     * Streams continuation content and appends it to an existing interrupted message.
+     * On completion sets interrupted=false; on IOException also appends partial content with interrupted=true.
+     */
+    private void doStreamAppend(HttpServletRequest req, HttpServletResponse resp,
+                                  ChatService.StreamContext ctx, String appendToMessageId) {
+        AsyncContext asyncCtx = req.startAsync();
+        asyncCtx.setTimeout(120000);
+        try {
+            ServletOutputStream out = resp.getOutputStream();
+            StringBuilder addedContent = new StringBuilder();
+            AtomicBoolean completed = new AtomicBoolean(false);
+            AtomicReference<Disposable> subRef = new AtomicReference<>();
+
+            subRef.set(ctx.flux().subscribe(
+                    chatResponse -> {
+                        if (completed.get()) return;
+                        try {
+                            Generation gen = chatResponse.getResult();
+                            if (gen == null) return;
+                            var output = gen.getOutput();
+                            if (output == null) return;
+                            String content = output.getText();
+                            if (content != null && !content.isEmpty()) {
+                                addedContent.append(content);
+                                String sse = "data: " + objectMapper.writeValueAsString(
+                                        Map.of("content", content)) + "\n\n";
+                                out.write(sse.getBytes(StandardCharsets.UTF_8));
+                                out.flush();
+                            }
+                        } catch (IOException e) {
+                            log.warn("Client disconnected during continue for message {}", appendToMessageId);
+                            if (addedContent.length() > 0) {
+                                try { chatService.appendToMessage(appendToMessageId, addedContent.toString(), true); }
+                                catch (Exception ex) { log.error("Failed to save partial continuation", ex); }
+                            }
+                            dispose(subRef);
+                            if (completed.compareAndSet(false, true)) asyncCtx.complete();
+                        }
+                    },
+                    error -> {
+                        dispose(subRef);
+                        if (addedContent.length() > 0) {
+                            try { chatService.appendToMessage(appendToMessageId, addedContent.toString(), true); }
+                            catch (Exception e) { log.error("Failed to save error continuation", e); }
+                        }
+                        try {
+                            String sse = "data: " + objectMapper.writeValueAsString(
+                                    Map.of("error", error.getMessage() != null ? error.getMessage() : "Unknown error")) + "\n\n";
+                            out.write(sse.getBytes(StandardCharsets.UTF_8));
+                            out.flush();
+                        } catch (IOException ignored) {}
+                        if (completed.compareAndSet(false, true)) asyncCtx.complete();
+                    },
+                    () -> {
+                        try {
+                            if (addedContent.length() > 0) {
+                                chatService.appendToMessage(appendToMessageId, addedContent.toString(), false);
+                            }
+                            Map<String, Object> doneData = new HashMap<>();
+                            doneData.put("done", true);
+                            doneData.put("messageId", appendToMessageId);
+                            String sse = "data: " + objectMapper.writeValueAsString(doneData) + "\n\n";
+                            out.write(sse.getBytes(StandardCharsets.UTF_8));
+                            out.flush();
+                        } catch (IOException ignored) {
+                        } catch (Exception e) {
+                            log.error("Failed to append continuation to message {}", appendToMessageId, e);
+                        }
+                        if (completed.compareAndSet(false, true)) asyncCtx.complete();
+                    }
+            ));
+
+            asyncCtx.addListener(new AsyncListener() {
+                @Override public void onTimeout(AsyncEvent event) { dispose(subRef); }
+                @Override public void onError(AsyncEvent event) { dispose(subRef); }
+                @Override public void onComplete(AsyncEvent event) {}
+                @Override public void onStartAsync(AsyncEvent event) {}
+            });
+        } catch (IOException e) {
+            log.error("Failed to initialize continue SSE stream for message {}", appendToMessageId, e);
             asyncCtx.complete();
         }
     }

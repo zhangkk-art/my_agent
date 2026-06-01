@@ -11,6 +11,7 @@ public class ChatRequest {
     private boolean webSearch = false;
     private Double temperature;
     private Integer maxTokens;
+    private String messageId;
 
     public String getConversationId() { return conversationId; }
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
@@ -26,4 +27,6 @@ public class ChatRequest {
     public void setTemperature(Double temperature) { this.temperature = temperature; }
     public Integer getMaxTokens() { return maxTokens; }
     public void setMaxTokens(Integer maxTokens) { this.maxTokens = maxTokens; }
+    public String getMessageId() { return messageId; }
+    public void setMessageId(String messageId) { this.messageId = messageId; }
 }

@@ -39,6 +39,8 @@ public class SchemaMigration implements ApplicationRunner {
                 "ALTER TABLE messages ADD COLUMN starred BOOLEAN NOT NULL DEFAULT FALSE");
         addColumnIfMissing("messages", "rating",
                 "ALTER TABLE messages ADD COLUMN rating TINYINT NULL DEFAULT NULL");
+        addColumnIfMissing("messages", "interrupted",
+                "ALTER TABLE messages ADD COLUMN interrupted BOOLEAN NOT NULL DEFAULT FALSE");
         addIndexIfMissing("messages", "idx_messages_conv_time",
                 "CREATE INDEX idx_messages_conv_time ON messages(conversation_id, created_at)");
     }
