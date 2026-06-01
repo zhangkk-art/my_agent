@@ -88,14 +88,14 @@
               <line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
             <span class="thinking-label">思考过程</span>
-            <span v-if="isStreaming && !message.content" class="thinking-dot">●</span>
+            <span v-if="isStreamingMsg && !message.content" class="thinking-dot">●</span>
             <svg class="thinking-chevron" :class="{ expanded: thinkingExpanded }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </div>
           <div v-show="thinkingExpanded" class="thinking-content">
             <div class="thinking-rendered markdown-body" v-html="renderedReasoning"></div>
-            <div v-if="isStreaming && !message.content" class="thinking-loading">
+            <div v-if="isStreamingMsg && !message.content" class="thinking-loading">
               <span></span><span></span><span></span>
             </div>
           </div>
@@ -103,12 +103,12 @@
         <!-- Assistant: rendered markdown — during streaming renders escaped plain text to avoid flash -->
         <div v-if="message.role === 'assistant'"
              class="markdown-body"
-             :class="{ 'is-streaming': isStreaming && message.content }"
+             :class="{ 'is-streaming': isStreamingMsg && message.content }"
              v-html="renderedContent"
              @click="handleContentClick">
         </div>
         <!-- Token usage for assistant messages -->
-        <div v-if="message.role === 'assistant' && !isStreaming && message.totalTokens" class="token-footer">
+        <div v-if="message.role === 'assistant' && !isStreamingMsg && message.totalTokens" class="token-footer">
           🧮 {{ message.totalTokens >= 1000 ? (message.totalTokens / 1000).toFixed(1) + 'k' : message.totalTokens }} tokens
           <span v-if="message.promptTokens"> · 输入 {{ message.promptTokens }}</span>
           <span v-if="message.completionTokens"> · 输出 {{ message.completionTokens }}</span>
@@ -127,7 +127,7 @@
           <div class="message-text">{{ message.content }}</div>
         </template>
       </template>
-      <div v-if="isStreaming && !message.content" class="typing-indicator">
+      <div v-if="isStreamingMsg && !message.content" class="typing-indicator">
         <span></span><span></span><span></span>
       </div>
     </div>
@@ -251,7 +251,7 @@ const confirmingDelete = ref(false)
 const thinkingExpanded = ref(false)
 
 // Start expanded during streaming so user sees the thinking process unfold
-if (props.isStreaming) {
+if (props.message.id && props.message.id.startsWith('streaming-')) {
   thinkingExpanded.value = true
 }
 
@@ -266,11 +266,15 @@ const renderedReasoning = computed(() => {
   return sanitizeHtml(restoreMath(html, rendered))
 })
 
+const isStreamingMsg = computed(() => {
+  return props.message.id && props.message.id.startsWith('streaming-')
+})
+
 const renderedContent = computed(() => {
   if (!props.message.content) return ''
   // During streaming, show escaped plain text to avoid raw markdown flashing.
-  // After completion, render full markdown + KaTeX.
-  if (props.isStreaming) {
+  // Uses message ID prefix as reliable streaming indicator.
+  if (isStreamingMsg.value) {
     return props.message.content
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
