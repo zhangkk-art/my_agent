@@ -107,6 +107,12 @@
              v-html="renderedContent"
              @click="handleContentClick">
         </div>
+        <!-- Token usage for assistant messages -->
+        <div v-if="message.role === 'assistant' && !isStreaming && message.totalTokens" class="token-footer">
+          🧮 {{ message.totalTokens >= 1000 ? (message.totalTokens / 1000).toFixed(1) + 'k' : message.totalTokens }} tokens
+          <span v-if="message.promptTokens"> · 输入 {{ message.promptTokens }}</span>
+          <span v-if="message.completionTokens"> · 输出 {{ message.completionTokens }}</span>
+        </div>
         <!-- User: images + raw text -->
         <template v-else>
           <div v-if="message.images && message.images.length > 0" class="message-images">
@@ -491,6 +497,14 @@ function doDelete() {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+.token-footer {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  user-select: none;
 }
 
 .message-images {
