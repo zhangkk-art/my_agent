@@ -100,10 +100,12 @@
             </div>
           </div>
         </div>
-        <!-- Assistant: rendered markdown only -->
-        <div v-if="message.role === 'assistant'"
+        <!-- Assistant: during streaming show plain text, after completion show rendered markdown -->
+        <div v-if="message.role === 'assistant' && isStreaming && message.content"
+             class="streaming-text"
+        >{{ message.content }}</div>
+        <div v-else-if="message.role === 'assistant'"
              class="markdown-body"
-             :class="{ 'is-streaming': isStreaming && message.content }"
              v-html="renderedContent"
              @click="handleContentClick">
         </div>
@@ -486,6 +488,17 @@ function doDelete() {
 }
 .btn-edit-cancel:hover {
   background: var(--border-color);
+}
+
+.streaming-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+}
+.streaming-text::after {
+  content: '▌';
+  animation: blink 0.8s step-end infinite;
+  color: var(--accent);
 }
 
 .markdown-body.is-streaming::after {
