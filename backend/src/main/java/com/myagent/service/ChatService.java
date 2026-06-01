@@ -357,15 +357,30 @@ public class ChatService {
 
     @Transactional
     public Message saveAssistantResponse(String conversationId, String content) {
-        return saveAssistantResponse(conversationId, content, null);
+        return saveAssistantResponse(conversationId, content, null, null);
     }
 
     @Transactional
     public Message saveAssistantResponse(String conversationId, String content, String reasoning) {
+        return saveAssistantResponse(conversationId, content, reasoning, null);
+    }
+
+    @Transactional
+    public Message saveAssistantResponse(String conversationId, String content, String reasoning,
+                                          org.springframework.ai.chat.metadata.Usage usage) {
         Message saved = insertMessage(conversationId, "assistant", content);
+        boolean needsUpdate = false;
         if (reasoning != null && !reasoning.isBlank()) {
-            // Update the inserted message with reasoning content
             saved.setReasoning(reasoning);
+            needsUpdate = true;
+        }
+        if (usage != null) {
+            saved.setPromptTokens((int) usage.getPromptTokens());
+            saved.setCompletionTokens((int) usage.getCompletionTokens());
+            saved.setTotalTokens((int) usage.getTotalTokens());
+            needsUpdate = true;
+        }
+        if (needsUpdate) {
             messageMapper.updateById(saved);
         }
         // After the first exchange (1 user + 1 assistant), generate a title asynchronously

@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.springframework.ai.chat.metadata.Usage;
+
 @RestController
 @RequestMapping("/api")
 public class ChatController {
@@ -85,12 +87,17 @@ public class ChatController {
             StringBuilder fullContent = new StringBuilder();
             StringBuilder fullReasoning = new StringBuilder();
             AtomicBoolean completed = new AtomicBoolean(false);
+            AtomicReference<Usage> lastUsage = new AtomicReference<>();
 
             AtomicReference<Disposable> subRef = new AtomicReference<>();
             subRef.set(ctx.flux().subscribe(
                     chatResponse -> {
                         if (completed.get()) return;
                         try {
+                            // Capture token usage from metadata (available on last chunk)
+                            if (chatResponse.getMetadata() != null && chatResponse.getMetadata().getUsage() != null) {
+                                lastUsage.set(chatResponse.getMetadata().getUsage());
+                            }
                             // Extract reasoning and content from ChatResponse
                             Generation gen = chatResponse.getResult();
                             if (gen == null) return;
@@ -128,7 +135,8 @@ public class ChatController {
                             try {
                                 chatService.saveAssistantResponse(ctx.conversationId(),
                                         fullContent.toString(),
-                                        fullReasoning.length() > 0 ? fullReasoning.toString() : null);
+                                        fullReasoning.length() > 0 ? fullReasoning.toString() : null,
+                                        lastUsage.get());
                             } catch (Exception e) {
                                 log.error("Failed to save partial assistant response for conversation {}", ctx.conversationId(), e);
                             }
@@ -152,7 +160,8 @@ public class ChatController {
                                 Message saved = chatService.saveAssistantResponse(
                                         ctx.conversationId(),
                                         fullContent.toString(),
-                                        fullReasoning.length() > 0 ? fullReasoning.toString() : null);
+                                        fullReasoning.length() > 0 ? fullReasoning.toString() : null,
+                                        lastUsage.get());
                                 messageId = saved.getId();
                             }
                             Map<String, Object> doneData = new HashMap<>();

@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS messages (
     role VARCHAR(20) NOT NULL,
     content TEXT NOT NULL,
     reasoning TEXT NULL DEFAULT NULL,
+    prompt_tokens INT NULL DEFAULT NULL,
+    completion_tokens INT NULL DEFAULT NULL,
+    total_tokens INT NULL DEFAULT NULL,
     created_at DATETIME NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

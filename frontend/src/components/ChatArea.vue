@@ -10,6 +10,10 @@
             <path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/>
           </svg>
         </button>
+        <!-- Token usage -->
+        <span v-if="conversation && totalTokens > 0" class="token-usage" title="本次对话消耗的 token 总量">
+          🧮 {{ formatTokens(totalTokens) }}
+        </span>
         <!-- Export dropdown -->
         <div v-if="conversation" class="export-wrapper">
           <button class="btn-icon-sm" title="导出对话" @click="exportOpen = !exportOpen">
@@ -142,6 +146,16 @@ const chatInputRef = ref(null)
 function focusInput() {
   chatInputRef.value?.focus()
 }
+const totalTokens = computed(() => {
+  if (!props.conversation?.messages) return 0
+  return props.conversation.messages.reduce((sum, m) => sum + (m.totalTokens || 0), 0)
+})
+
+function formatTokens(n) {
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
+  return String(n)
+}
+
 defineExpose({ focusInput })
 
 const props = defineProps({
@@ -337,6 +351,13 @@ function doExport(format) {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+.token-usage {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding: 0 4px;
 }
 
 .top-bar-overlay {

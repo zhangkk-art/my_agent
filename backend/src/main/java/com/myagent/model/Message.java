@@ -14,6 +14,9 @@ public class Message {
     private String role;
     private String content;
     private String reasoning;
+    private Integer promptTokens;
+    private Integer completionTokens;
+    private Integer totalTokens;
     private LocalDateTime createdAt;
 
     public Message() {}
@@ -36,6 +39,12 @@ public class Message {
     public void setContent(String content) { this.content = content; }
     public String getReasoning() { return reasoning; }
     public void setReasoning(String reasoning) { this.reasoning = reasoning; }
+    public Integer getPromptTokens() { return promptTokens; }
+    public void setPromptTokens(Integer promptTokens) { this.promptTokens = promptTokens; }
+    public Integer getCompletionTokens() { return completionTokens; }
+    public void setCompletionTokens(Integer completionTokens) { this.completionTokens = completionTokens; }
+    public Integer getTotalTokens() { return totalTokens; }
+    public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }
