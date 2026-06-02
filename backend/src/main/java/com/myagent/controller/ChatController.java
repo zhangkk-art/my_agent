@@ -87,7 +87,8 @@ public class ChatController {
                            HttpServletRequest req,
                            HttpServletResponse resp) {
         doStream(req, resp, chatService.regenerateStream(
-                request.getConversationId(), request.getMessage(), request.getModel(), request.isWebSearch()));
+                request.getConversationId(), request.getMessage(), request.getModel(),
+                request.isWebSearch(), request.getTemperature(), request.getMaxTokens()));
     }
 
     private void doStream(HttpServletRequest req, HttpServletResponse resp, ChatService.StreamContext ctx) {

@@ -475,7 +475,8 @@ public class ChatService {
         return new StreamContext(conversationId, flux);
     }
 
-    public StreamContext regenerateStream(String conversationId, String userMessage, String model, boolean webSearch) {
+    public StreamContext regenerateStream(String conversationId, String userMessage, String model,
+                                          boolean webSearch, Double temperature, Integer maxTokens) {
         Conversation conv = conversationService.prepareForRegenerate(conversationId, userMessage);
 
         List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
@@ -485,6 +486,7 @@ public class ChatService {
         var spec = selectClient(model).prompt()
                 .system(buildDynamicSystemPrompt(conv.getId(), userMessage, webSearch))
                 .messages(history);
+        applyOptions(spec, temperature, maxTokens);
         spec.toolCallbacks(getFileSystemTools());
         if (webSearch) {
             spec.tools(toolFunctions, webSearchTools);

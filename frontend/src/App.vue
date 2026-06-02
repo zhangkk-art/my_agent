@@ -541,11 +541,13 @@ function regenerateMessage() {
     createdAt: new Date().toISOString()
   })
 
+  const { temperature: regenTemp, maxTokens: regenMaxTokens } = chatAreaRef.value?.aiParams ?? {}
   api.regenerateStream(
     activeConversationId.value,
     lastUserContent,
     selectedModel.value,
     lastWebSearch.value,
+    regenTemp ?? null, regenMaxTokens ?? null,
     // onReasoning
     (reasoning) => {
       const lastMsg = conv.messages[conv.messages.length - 1]
@@ -624,11 +626,13 @@ async function handleEditMessage(messageId, newContent) {
       createdAt: new Date().toISOString()
     })
 
+    const { temperature: editRegenTemp, maxTokens: editRegenMaxTokens } = chatAreaRef.value?.aiParams ?? {}
     api.regenerateStream(
       activeConversationId.value,
       updated.content,
       selectedModel.value,
       lastWebSearch.value,
+      editRegenTemp ?? null, editRegenMaxTokens ?? null,
       (reasoning) => {
         const lastMsg = conv.messages[conv.messages.length - 1]
         if (lastMsg?.role === 'assistant') lastMsg.reasoning = (lastMsg.reasoning || '') + reasoning

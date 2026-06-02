@@ -103,8 +103,8 @@ export function sendImageStream(conversationId, message, model, images, webSearc
   streamSse(`${BASE_URL}/chat/image`, { conversationId, message, model, images, webSearch, temperature, maxTokens }, onReasoning, onChunk, onDone, onError, signal);
 }
 
-export function regenerateStream(conversationId, message, model, webSearch, onReasoning, onChunk, onDone, onError, signal) {
-  streamSse(`${BASE_URL}/chat/regenerate`, { conversationId, message, model, webSearch }, onReasoning, onChunk, onDone, onError, signal);
+export function regenerateStream(conversationId, message, model, webSearch, temperature, maxTokens, onReasoning, onChunk, onDone, onError, signal) {
+  streamSse(`${BASE_URL}/chat/regenerate`, { conversationId, message, model, webSearch, temperature, maxTokens }, onReasoning, onChunk, onDone, onError, signal);
 }
 
 export async function savePartialMessage(conversationId, content, reasoning) {
