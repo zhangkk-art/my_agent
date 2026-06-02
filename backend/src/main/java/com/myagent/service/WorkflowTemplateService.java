@@ -3,6 +3,8 @@ package com.myagent.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.myagent.mapper.WorkflowTemplateMapper;
 import com.myagent.model.WorkflowTemplate;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,7 @@ public class WorkflowTemplateService {
         this.mapper = mapper;
     }
 
+    @Cacheable(value = "workflow_templates", key = "'all'")
     public List<WorkflowTemplate> getAll() {
         return mapper.selectList(
                 new LambdaQueryWrapper<WorkflowTemplate>()
@@ -30,6 +33,7 @@ public class WorkflowTemplateService {
     }
 
     @Transactional
+    @CacheEvict(value = "workflow_templates", key = "'all'")
     public WorkflowTemplate create(Map<String, String> body) {
         WorkflowTemplate t = new WorkflowTemplate();
         t.setId(UUID.randomUUID().toString());
@@ -45,6 +49,7 @@ public class WorkflowTemplateService {
     }
 
     @Transactional
+    @CacheEvict(value = "workflow_templates", key = "'all'")
     public WorkflowTemplate update(String id, Map<String, String> body) {
         WorkflowTemplate t = mapper.selectById(id);
         if (t == null) {
@@ -60,6 +65,7 @@ public class WorkflowTemplateService {
     }
 
     @Transactional
+    @CacheEvict(value = "workflow_templates", key = "'all'")
     public void delete(String id) {
         if (mapper.selectById(id) == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow template not found: " + id);

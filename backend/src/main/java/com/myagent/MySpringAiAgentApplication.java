@@ -3,8 +3,10 @@ package com.myagent;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
+@EnableScheduling
 @MapperScan({"com.myagent.mapper", "com.myagent.rag.mapper"})
 public class MySpringAiAgentApplication {
     public static void main(String[] args) {

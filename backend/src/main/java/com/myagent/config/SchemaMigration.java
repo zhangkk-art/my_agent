@@ -43,6 +43,10 @@ public class SchemaMigration implements ApplicationRunner {
                 "ALTER TABLE messages ADD COLUMN interrupted BOOLEAN NOT NULL DEFAULT FALSE");
         addIndexIfMissing("messages", "idx_messages_conv_time",
                 "CREATE INDEX idx_messages_conv_time ON messages(conversation_id, created_at)");
+        addColumnIfMissing("knowledge_documents", "file_hash",
+                "ALTER TABLE knowledge_documents ADD COLUMN file_hash VARCHAR(64) NULL DEFAULT NULL");
+        addColumnIfMissing("knowledge_documents", "updated_at",
+                "ALTER TABLE knowledge_documents ADD COLUMN updated_at DATETIME NULL DEFAULT NULL");
     }
 
     private void addColumnIfMissing(String table, String column, String alterSql) {

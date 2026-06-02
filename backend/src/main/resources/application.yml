@@ -3,6 +3,18 @@ server:
   port: 8080
 
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
   datasource:
     url: jdbc:mysql://localhost:3306/ai_chat?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
     username: root
@@ -61,10 +73,12 @@ app:
     endpoint: https://api.bochaai.com/v1/web-search
   elasticsearch:
     host: ${ES_HOST:localhost}
-    port: ${ES_PORT:9200}
+    port: ${ES_PORT:9201}
     username: ${ES_USERNAME:}
     password: ${ES_PASSWORD:}
     kb-dir: ${KB_DIR:./knowledge-base}
+    refresh-enabled: ${KB_REFRESH_ENABLED:true}
+    refresh-interval-ms: ${KB_REFRESH_INTERVAL_MS:300000}
 
 logging:
   level:

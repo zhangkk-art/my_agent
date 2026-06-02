@@ -7,6 +7,9 @@ frontend/dist/
 frontend/.npm-cache/
 frontend/.vite/
 
+# ── 根目录 npm 缓存 ──
+.npm-cache/
+
 # ── 前端敏感配置 ──
 frontend/.env.local
 frontend/.env.*.local

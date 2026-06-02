@@ -3,6 +3,8 @@ package com.myagent.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.myagent.mapper.PromptTemplateMapper;
 import com.myagent.model.PromptTemplate;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ public class PromptTemplateService {
         this.mapper = mapper;
     }
 
+    @Cacheable(value = "prompt_templates", key = "'all'")
     public List<PromptTemplate> getAll() {
         return mapper.selectList(
                 new LambdaQueryWrapper<PromptTemplate>()
@@ -29,6 +32,7 @@ public class PromptTemplateService {
     }
 
     @Transactional
+    @CacheEvict(value = "prompt_templates", key = "'all'")
     public PromptTemplate create(String name, String content) {
         PromptTemplate t = new PromptTemplate();
         t.setId(UUID.randomUUID().toString());
@@ -42,6 +46,7 @@ public class PromptTemplateService {
     }
 
     @Transactional
+    @CacheEvict(value = "prompt_templates", key = "'all'")
     public PromptTemplate update(String id, String name, String content) {
         PromptTemplate t = mapper.selectById(id);
         if (t == null) {
@@ -55,6 +60,7 @@ public class PromptTemplateService {
     }
 
     @Transactional
+    @CacheEvict(value = "prompt_templates", key = "'all'")
     public void delete(String id) {
         if (mapper.selectById(id) == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Template not found: " + id);

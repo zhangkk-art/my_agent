@@ -14,7 +14,9 @@ public class KnowledgeDocument {
     private String contentType;
     private Long fileSize;
     private Integer chunkCount;
+    private String fileHash;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     public KnowledgeDocument() {}
 
@@ -28,6 +30,10 @@ public class KnowledgeDocument {
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
     public Integer getChunkCount() { return chunkCount; }
     public void setChunkCount(Integer chunkCount) { this.chunkCount = chunkCount; }
+    public String getFileHash() { return fileHash; }
+    public void setFileHash(String fileHash) { this.fileHash = fileHash; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

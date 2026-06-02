@@ -34,6 +34,15 @@ public class KnowledgeController {
         return knowledgeService.uploadDocument(file);
     }
 
+    /**
+     * Manually trigger a full sync of the knowledge-base directory.
+     * Re-indexes changed files and removes records for deleted files.
+     */
+    @PostMapping("/refresh")
+    public KnowledgeService.RefreshResult refresh() {
+        return knowledgeService.loadFromDirectory();
+    }
+
     @GetMapping("/documents")
     public List<KnowledgeDocument> listDocuments() {
         return knowledgeService.listDocuments();

@@ -5,6 +5,9 @@ import com.myagent.mapper.ConversationMapper;
 import com.myagent.mapper.MessageMapper;
 import com.myagent.model.Conversation;
 import com.myagent.model.Message;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,10 +24,14 @@ public class ConversationService {
 
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
+    private final CacheManager cacheManager;
 
-    public ConversationService(ConversationMapper conversationMapper, MessageMapper messageMapper) {
+    public ConversationService(ConversationMapper conversationMapper,
+                               MessageMapper messageMapper,
+                               CacheManager cacheManager) {
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
+        this.cacheManager = cacheManager;
     }
 
     public List<Conversation> getAllConversations() {
@@ -291,12 +298,18 @@ public class ConversationService {
 
     /**
      * Revoke a share token, making the conversation private again.
+     * Evicts the specific cache entry so the revoked link stops working immediately.
      */
     @Transactional
     public void revokeShare(String id) {
         Conversation conv = conversationMapper.selectById(id);
         if (conv == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+        }
+        // Precise eviction by token key before clearing the token in DB
+        if (conv.getShareToken() != null) {
+            Cache cache = cacheManager.getCache("shared_conversations");
+            if (cache != null) cache.evict(conv.getShareToken());
         }
         conv.setShareToken(null);
         conv.setUpdatedAt(LocalDateTime.now());
@@ -305,7 +318,9 @@ public class ConversationService {
 
     /**
      * Get a conversation by its share token (public access).
+     * Cached for 10 minutes — cache is evicted immediately on revoke.
      */
+    @Cacheable(value = "shared_conversations", key = "#token")
     public Conversation getSharedConversation(String token) {
         List<Conversation> list = conversationMapper.selectList(
                 new LambdaQueryWrapper<Conversation>()
