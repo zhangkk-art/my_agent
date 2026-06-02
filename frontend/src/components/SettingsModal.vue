@@ -31,6 +31,41 @@
           </div>
         </div>
 
+        <!-- 生成参数 -->
+        <div class="settings-section">
+          <div class="section-label">生成参数</div>
+
+          <div class="setting-row setting-row-col">
+            <div class="setting-info">
+              <div class="setting-name">Temperature <span class="param-val">{{ local.temperature?.toFixed(1) ?? '0.7' }}</span></div>
+              <div class="setting-desc">越高越有创意，越低越保守</div>
+            </div>
+            <input type="range" min="0" max="2" step="0.1"
+              :value="local.temperature ?? 0.7"
+              @input="set('temperature', parseFloat($event.target.value))"
+              class="param-slider" />
+          </div>
+
+          <div class="setting-row setting-row-col">
+            <div class="setting-info">
+              <div class="setting-name">最大 Token <span class="param-val">{{ local.maxTokens ?? 2048 }}</span></div>
+              <div class="setting-desc">单次回答的最大输出长度</div>
+            </div>
+            <input type="range" min="256" max="8192" step="256"
+              :value="local.maxTokens ?? 2048"
+              @input="set('maxTokens', parseInt($event.target.value))"
+              class="param-slider" />
+          </div>
+
+          <div class="setting-row" style="padding-top:4px;padding-bottom:12px;">
+            <div></div>
+            <button class="btn-param-reset"
+              @click="set('temperature', 0.7); set('maxTokens', 2048)">
+              恢复默认
+            </button>
+          </div>
+        </div>
+
         <!-- 对话 -->
         <div class="settings-section">
           <div class="section-label">对话</div>
@@ -601,6 +636,42 @@ function doClear() {
 }
 .btn-footer-save:hover {
   background: var(--accent-hover);
+}
+
+/* ── Generate params ── */
+.setting-row-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-height: unset;
+  padding-bottom: 8px;
+}
+.setting-row-col .setting-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.param-val {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+}
+.param-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.btn-param-reset {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: none;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border-color);
+  transition: all 0.15s;
+}
+.btn-param-reset:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
 }
 
 /* ── Template management ── */

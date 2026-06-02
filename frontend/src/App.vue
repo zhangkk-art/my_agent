@@ -86,6 +86,8 @@ const DEFAULT_SETTINGS = {
   defaultModel: 'deepseek',
   enterToSend: true,
   voiceLang: 'zh-CN',
+  temperature: 0.7,
+  maxTokens: 2048,
 }
 const FONT_SIZE_MAP = { small: '13px', medium: '14px', large: '16px' }
 
@@ -403,7 +405,7 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
     }
   }
 
-  const { temperature, maxTokens } = chatAreaRef.value?.aiParams ?? {}
+  const { temperature, maxTokens } = settings.value
   if (images.length > 0) {
     api.sendImageStream(conversationId, message, selectedModel.value, images, webSearch,
       temperature ?? null, maxTokens ?? null, onReasoning, onChunk, onDone, onError, controller.signal)
@@ -496,7 +498,7 @@ function handleContinueMessage(messageId) {
     toastRef.value?.show('续传出错: ' + error.message, 'error')
   }
 
-  const { temperature, maxTokens } = chatAreaRef.value?.aiParams ?? {}
+  const { temperature, maxTokens } = settings.value
   api.continueStream(
     activeConversationId.value, messageId, selectedModel.value,
     temperature ?? null, maxTokens ?? null,
@@ -541,7 +543,7 @@ function regenerateMessage() {
     createdAt: new Date().toISOString()
   })
 
-  const { temperature: regenTemp, maxTokens: regenMaxTokens } = chatAreaRef.value?.aiParams ?? {}
+  const { temperature: regenTemp, maxTokens: regenMaxTokens } = settings.value
   api.regenerateStream(
     activeConversationId.value,
     lastUserContent,
@@ -626,7 +628,7 @@ async function handleEditMessage(messageId, newContent) {
       createdAt: new Date().toISOString()
     })
 
-    const { temperature: editRegenTemp, maxTokens: editRegenMaxTokens } = chatAreaRef.value?.aiParams ?? {}
+    const { temperature: editRegenTemp, maxTokens: editRegenMaxTokens } = settings.value
     api.regenerateStream(
       activeConversationId.value,
       updated.content,

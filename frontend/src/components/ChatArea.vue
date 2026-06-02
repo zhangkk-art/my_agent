@@ -3,32 +3,6 @@
     <div class="chat-top-bar">
       <slot name="hamburger"></slot>
       <div class="top-bar-right">
-        <!-- AI Parameter panel toggle -->
-        <div class="param-wrapper">
-          <button class="btn-icon-sm" :class="{ 'btn-param-active': paramOpen }" title="参数调节" @click="paramOpen = !paramOpen">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
-              <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
-              <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
-              <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
-            </svg>
-          </button>
-          <Transition name="drop">
-            <div v-if="paramOpen" class="param-panel">
-              <div class="param-title">生成参数</div>
-              <div class="param-row">
-                <label class="param-label">Temperature <span class="param-val">{{ aiParams.temperature.toFixed(1) }}</span></label>
-                <input type="range" min="0" max="2" step="0.1" v-model.number="aiParams.temperature" class="param-slider" />
-                <div class="param-desc">越高越有创意，越低越保守</div>
-              </div>
-              <div class="param-row">
-                <label class="param-label">最大 Token <span class="param-val">{{ aiParams.maxTokens }}</span></label>
-                <input type="range" min="256" max="8192" step="256" v-model.number="aiParams.maxTokens" class="param-slider" />
-              </div>
-              <button class="param-reset" @click="resetParams">恢复默认</button>
-            </div>
-          </Transition>
-        </div>
         <!-- System prompt button -->
         <button v-if="conversation" class="btn-icon-sm" title="系统提示词" @click="openPromptModal">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -36,38 +10,36 @@
             <path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/>
           </svg>
         </button>
-        <!-- Export dropdown -->
-        <div v-if="conversation" class="export-wrapper">
-          <button class="btn-icon-sm" title="导出对话" @click="exportOpen = !exportOpen">
+
+        <!-- More actions: export + share -->
+        <div v-if="conversation" class="more-wrapper">
+          <button class="btn-icon-sm" title="更多操作" @click="moreOpen = !moreOpen; sharePopOpen = false">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
+              <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/>
             </svg>
           </button>
           <Transition name="drop">
-            <div v-if="exportOpen" class="export-dropdown">
-              <div class="export-option" @click="doExport('md')">导出为 Markdown</div>
-              <div class="export-option" @click="doExport('txt')">导出为 TXT</div>
+            <div v-if="moreOpen" class="more-dropdown">
+              <div class="more-group-label">导出</div>
+              <div class="more-option" @click="doExport('md')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                导出 Markdown
+              </div>
+              <div class="more-option" @click="doExport('txt')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                导出 TXT
+              </div>
+              <div class="more-divider"></div>
+              <div class="more-group-label">分享</div>
+              <div class="more-option" @click="doShare">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                生成分享链接
+              </div>
             </div>
           </Transition>
-        </div>
-        <!-- Share button + popup -->
-        <div v-if="conversation" class="share-wrapper">
-          <button
-            class="btn-icon-sm"
-            :class="{ 'btn-shared-active': sharePopOpen }"
-            title="分享对话"
-            @click="doShare"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="18" cy="5" r="3"/>
-              <circle cx="6" cy="12" r="3"/>
-              <circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-          </button>
+          <!-- Share popup anchored to more-wrapper -->
           <Transition name="drop">
             <div v-if="sharePopOpen" class="share-popup">
               <div class="share-popup-title">分享链接已生成</div>
@@ -85,6 +57,7 @@
             </div>
           </Transition>
         </div>
+
         <!-- Model picker -->
         <div class="model-picker">
           <button class="model-btn" @click="open = !open">
@@ -107,7 +80,7 @@
           </Transition>
         </div>
       </div>
-      <div v-if="open || exportOpen || sharePopOpen" class="top-bar-overlay" @click="open = false; exportOpen = false; closeShare()"></div>
+      <div v-if="open || moreOpen || sharePopOpen" class="top-bar-overlay" @click="open = false; moreOpen = false; closeShare()"></div>
     </div>
 
     <!-- System prompt modal -->
@@ -188,13 +161,9 @@ const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMe
 
 const messageListRef = ref(null)
 const open = ref(false)
-const exportOpen = ref(false)
-const paramOpen = ref(false)
-const aiParams = ref({ temperature: 0.7, maxTokens: 2048 })
-function resetParams() { aiParams.value = { temperature: 0.7, maxTokens: 2048 } }
+const moreOpen = ref(false)
 defineExpose({
   focusInput,
-  aiParams,
   scrollToMessage: (id) => messageListRef.value?.scrollToMessage(id)
 })
 // shareToken is a temporary ref — set briefly when sharing to show the popup URL,
@@ -249,6 +218,7 @@ watch(() => props.conversation, () => {
 
 async function doShare() {
   if (!props.conversation) return
+  moreOpen.value = false
   try {
     const result = await api.shareConversation(props.conversation.id)
     shareToken.value = result.shareToken
@@ -323,7 +293,7 @@ function savePrompt() {
 }
 
 function doExport(format) {
-  exportOpen.value = false
+  moreOpen.value = false
   const conv = props.conversation
   if (!conv) return
   const msgs = conv.messages || []
@@ -556,9 +526,6 @@ function doExport(format) {
   font-size: 13px;
 }
 .btn-modal-save:hover { background: var(--accent-hover); }
-.export-wrapper {
-  position: relative;
-}
 .btn-icon-sm {
   width: 32px;
   height: 32px;
@@ -575,45 +542,51 @@ function doExport(format) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.export-dropdown {
+
+/* ── More-actions dropdown ── */
+.more-wrapper {
+  position: relative;
+}
+.more-dropdown {
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  min-width: 170px;
   overflow: hidden;
-  min-width: 160px;
   z-index: 20;
+  padding: 4px 0;
 }
-.export-option {
-  padding: 9px 14px;
+.more-group-label {
+  padding: 6px 14px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.more-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
   font-size: 13px;
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.1s;
 }
-.export-option:hover {
+.more-option:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-
-.param-wrapper { position: relative; }
-.btn-param-active { color: var(--accent) !important; border-color: var(--accent) !important; }
-.param-panel {
-  position: absolute; right: 0; top: calc(100% + 6px); width: 240px;
-  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px;
-  padding: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 20;
+.more-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
 }
-.param-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; }
-.param-row { margin-bottom: 12px; }
-.param-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
-.param-val { color: var(--accent); font-weight: 600; }
-.param-slider { width: 100%; accent-color: var(--accent); }
-.param-desc { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
-.param-reset { font-size: 11px; color: var(--text-muted); background: none; padding: 4px 8px; border-radius: 5px; transition: all 0.15s; border: 1px solid var(--border-color); }
-.param-reset:hover { color: var(--text-primary); border-color: var(--text-secondary); }
 
 /* Dropdown transition */
 .drop-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
