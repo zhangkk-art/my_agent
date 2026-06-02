@@ -204,17 +204,25 @@
 
         <!-- 快捷键 -->
         <div class="settings-section">
-          <div class="section-label">键盘快捷键</div>
-          <div class="shortcuts-table">
-            <div class="shortcut-group-name">导航</div>
-            <div class="shortcut-row"><span>搜索对话</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>K</kbd></span></div>
-            <div class="shortcut-row"><span>打开设置 / 快捷键</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>,</kbd> 或 <kbd>/</kbd></span></div>
-            <div class="shortcut-group-name" style="margin-top:10px">对话</div>
-            <div class="shortcut-row"><span>发送消息</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>Enter</kbd></span></div>
-            <div class="shortcut-row"><span>停止生成 / 关闭面板</span><span class="keys"><kbd>Esc</kbd></span></div>
-            <div class="shortcut-row"><span>填充上条消息</span><span class="keys"><kbd>↑（输入框为空时）</kbd></span></div>
-            <div class="shortcut-row"><span>清除历史填充</span><span class="keys"><kbd>↓</kbd></span></div>
-          </div>
+          <button class="section-label-toggle" @click="shortcutsOpen = !shortcutsOpen">
+            <span>键盘快捷键</span>
+            <svg class="toggle-chevron" :class="{ open: shortcutsOpen }"
+              width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+          <Transition name="expand">
+            <div v-if="shortcutsOpen" class="shortcuts-table">
+              <div class="shortcut-group-name">导航</div>
+              <div class="shortcut-row"><span>搜索对话</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>K</kbd></span></div>
+              <div class="shortcut-row"><span>打开设置 / 快捷键</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>,</kbd> 或 <kbd>/</kbd></span></div>
+              <div class="shortcut-group-name" style="margin-top:10px">对话</div>
+              <div class="shortcut-row"><span>发送消息</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>Enter</kbd></span></div>
+              <div class="shortcut-row"><span>停止生成 / 关闭面板</span><span class="keys"><kbd>Esc</kbd></span></div>
+              <div class="shortcut-row"><span>填充上条消息</span><span class="keys"><kbd>↑（输入框为空时）</kbd></span></div>
+              <div class="shortcut-row"><span>清除历史填充</span><span class="keys"><kbd>↓</kbd></span></div>
+            </div>
+          </Transition>
         </div>
 
         <!-- 数据 -->
@@ -259,6 +267,7 @@ const emit = defineEmits(['close', 'update', 'clearAll', 'themeChange'])
 
 const local = reactive({ ...props.modelValue })
 const confirmingClear = ref(false)
+const shortcutsOpen = ref(false)
 
 // ── Prompt template management ──
 const templates = ref([])
@@ -675,6 +684,36 @@ function doClear() {
 .btn-footer-save:hover {
   background: var(--accent-hover);
 }
+
+/* ── Shortcuts collapsible ── */
+.section-label-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 20px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  background: none;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.section-label-toggle:hover { color: var(--text-secondary); }
+
+.toggle-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.toggle-chevron.open { transform: rotate(180deg); }
+
+.expand-enter-active { transition: opacity 0.2s ease, max-height 0.25s ease; overflow: hidden; }
+.expand-leave-active { transition: opacity 0.15s ease, max-height 0.2s ease; overflow: hidden; }
+.expand-enter-from, .expand-leave-to { opacity: 0; max-height: 0; }
+.expand-enter-to, .expand-leave-from { opacity: 1; max-height: 300px; }
 
 /* ── Shortcuts table ── */
 .shortcuts-table {
