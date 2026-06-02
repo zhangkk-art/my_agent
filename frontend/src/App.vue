@@ -19,7 +19,6 @@
       @import="handleImportConversation"
       @bulkDelete="handleBulkDelete"
       @openSettings="showSettings = true"
-      @openShortcuts="showShortcuts = true"
     />
     <div
       class="resize-handle"
@@ -62,10 +61,8 @@
         @close="showSettings = false"
         @update="handleSettingsUpdate"
         @clearAll="handleClearAll"
+        @themeChange="applyTheme"
       />
-    </Transition>
-    <Transition name="modal">
-      <ShortcutsModal v-if="showShortcuts" @close="showShortcuts = false" />
     </Transition>
     <Toast ref="toastRef" />
   </div>
@@ -77,7 +74,6 @@ import Sidebar from './components/Sidebar.vue'
 import ChatArea from './components/ChatArea.vue'
 import Toast from './components/Toast.vue'
 import SettingsModal from './components/SettingsModal.vue'
-import ShortcutsModal from './components/ShortcutsModal.vue'
 import SharedView from './components/SharedView.vue'
 import * as api from './api/index.js'
 
@@ -88,6 +84,7 @@ const DEFAULT_SETTINGS = {
   voiceLang: 'zh-CN',
   temperature: 0.7,
   maxTokens: 2048,
+  theme: 'system',
 }
 const FONT_SIZE_MAP = { small: '13px', medium: '14px', large: '16px' }
 
@@ -103,6 +100,15 @@ function applyFontSize(size) {
   document.documentElement.style.setProperty('--base-font-size', FONT_SIZE_MAP[size] || '14px')
 }
 
+function applyTheme(theme) {
+  if (theme === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
+  } else {
+    document.documentElement.setAttribute('data-theme', theme || 'light')
+  }
+}
+
 const conversations = ref([])
 const activeConversationId = ref(null)
 const loading = ref(false)
@@ -113,7 +119,6 @@ const chatAreaRef = ref(null)
 const toastRef = ref(null)
 const selectedModel = ref(localStorage.getItem('model') || 'deepseek')
 const showSettings = ref(false)
-const showShortcuts = ref(false)
 const settings = ref(loadSettings())
 // Track the last webSearch state so regenerate can reuse it
 const lastWebSearch = ref(false)
@@ -192,16 +197,15 @@ function handleGlobalKeydown(e) {
 
   // Esc: close modals in priority order, then stop streaming
   if (e.key === 'Escape') {
-    if (showShortcuts.value) { showShortcuts.value = false; return }
     if (showSettings.value) { showSettings.value = false; return }
     if (loading.value) { stopStream(); return }
     return
   }
 
-  // Ctrl/Cmd + / — toggle shortcuts help (fires even in inputs)
+  // Ctrl/Cmd + / — open settings (shortcuts are now inside settings)
   if (mod && e.key === '/') {
     e.preventDefault()
-    showShortcuts.value = !showShortcuts.value
+    showSettings.value = true
     return
   }
 
@@ -226,6 +230,18 @@ function handleGlobalKeydown(e) {
 
 onMounted(async () => {
   applyFontSize(settings.value.fontSize)
+  // Migrate old standalone theme from localStorage if settings has default 'system'
+  if (settings.value.theme === 'system') {
+    const legacyTheme = localStorage.getItem('theme')
+    if (legacyTheme === 'light' || legacyTheme === 'dark') {
+      settings.value.theme = legacyTheme
+    }
+  }
+  applyTheme(settings.value.theme)
+  // Listen for OS dark-mode changes when theme is 'system'
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (settings.value.theme === 'system') applyTheme('system')
+  })
   window.addEventListener('keydown', handleGlobalKeydown)
   try {
     conversations.value = await api.getConversations()
@@ -789,6 +805,7 @@ function handleSettingsUpdate(newSettings) {
   settings.value = { ...newSettings }
   localStorage.setItem('app-settings', JSON.stringify(newSettings))
   applyFontSize(newSettings.fontSize)
+  applyTheme(newSettings.theme)
   // If default model changed, also update the current model if it hasn't been explicitly changed this session
   if (newSettings.defaultModel !== selectedModel.value) {
     selectedModel.value = newSettings.defaultModel

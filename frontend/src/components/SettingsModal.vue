@@ -18,6 +18,21 @@
 
           <div class="setting-row">
             <div class="setting-info">
+              <div class="setting-name">主题</div>
+              <div class="setting-desc">浅色 / 深色 / 跟随系统</div>
+            </div>
+            <div class="seg-control">
+              <button class="seg-btn" :class="{ active: local.theme === 'light' }"
+                @click="setTheme('light')">浅色</button>
+              <button class="seg-btn" :class="{ active: local.theme === 'dark' }"
+                @click="setTheme('dark')">深色</button>
+              <button class="seg-btn" :class="{ active: local.theme === 'system' || !local.theme }"
+                @click="setTheme('system')">自动</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
               <div class="setting-name">字体大小</div>
             </div>
             <div class="seg-control">
@@ -187,6 +202,21 @@
           </div>
         </div>
 
+        <!-- 快捷键 -->
+        <div class="settings-section">
+          <div class="section-label">键盘快捷键</div>
+          <div class="shortcuts-table">
+            <div class="shortcut-group-name">导航</div>
+            <div class="shortcut-row"><span>搜索对话</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>K</kbd></span></div>
+            <div class="shortcut-row"><span>打开设置 / 快捷键</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>,</kbd> 或 <kbd>/</kbd></span></div>
+            <div class="shortcut-group-name" style="margin-top:10px">对话</div>
+            <div class="shortcut-row"><span>发送消息</span><span class="keys"><kbd>{{ mod }}</kbd><kbd>Enter</kbd></span></div>
+            <div class="shortcut-row"><span>停止生成 / 关闭面板</span><span class="keys"><kbd>Esc</kbd></span></div>
+            <div class="shortcut-row"><span>填充上条消息</span><span class="keys"><kbd>↑（输入框为空时）</kbd></span></div>
+            <div class="shortcut-row"><span>清除历史填充</span><span class="keys"><kbd>↓</kbd></span></div>
+          </div>
+        </div>
+
         <!-- 数据 -->
         <div class="settings-section">
           <div class="section-label">数据</div>
@@ -221,8 +251,11 @@
 import { reactive, ref, watch } from 'vue'
 import * as api from '../api/index.js'
 
+const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+const mod = isMac ? '⌘' : 'Ctrl'
+
 const props = defineProps({ modelValue: Object })
-const emit = defineEmits(['close', 'update', 'clearAll'])
+const emit = defineEmits(['close', 'update', 'clearAll', 'themeChange'])
 
 const local = reactive({ ...props.modelValue })
 const confirmingClear = ref(false)
@@ -373,6 +406,11 @@ const fontSizeOptions = [
 
 function set(key, value) {
   local[key] = value
+}
+
+function setTheme(theme) {
+  set('theme', theme)
+  emit('themeChange', theme)
 }
 
 function save() {
@@ -636,6 +674,55 @@ function doClear() {
 }
 .btn-footer-save:hover {
   background: var(--accent-hover);
+}
+
+/* ── Shortcuts table ── */
+.shortcuts-table {
+  padding: 4px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.shortcut-group-name {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.shortcut-row:last-child { border-bottom: none; }
+.keys {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--border-color);
+  white-space: nowrap;
 }
 
 /* ── Generate params ── */

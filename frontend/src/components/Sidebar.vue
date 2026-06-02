@@ -15,18 +15,6 @@
             <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
           </svg>
         </button>
-        <button class="btn-icon" :title="themeTitle" @click="toggleTheme">
-          <svg v-if="theme === 'light'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
-          </svg>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5"/>
-            <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-          </svg>
-        </button>
         <input ref="importInput" type="file" accept=".json,.md,.txt" class="file-hidden" @change="onImportFile" />
         <button class="btn-icon" title="导入对话" @click="importInput.click()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -39,12 +27,6 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="9 11 12 14 22 4"/>
             <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
-          </svg>
-        </button>
-        <button class="btn-icon" title="快捷键 (Ctrl+/)" @click="$emit('openShortcuts')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
         </button>
         <button class="btn-new-chat" @click="$emit('new')">
@@ -190,14 +172,13 @@ const props = defineProps({
   width: { type: Number, default: 280 }
 })
 
-const emit = defineEmits(['select', 'selectMessage', 'new', 'delete', 'rename', 'openSettings', 'openShortcuts', 'pin', 'setFolder', 'import', 'bulkDelete'])
+const emit = defineEmits(['select', 'selectMessage', 'new', 'delete', 'rename', 'openSettings', 'pin', 'setFolder', 'import', 'bulkDelete'])
 
 const searchInputRef = ref(null)
 
 const renamingId = ref(null)
 const renameText = ref('')
 const searchQuery = ref('')
-const theme = ref('light')
 const sidebarOpen = ref(false)
 const msgResults = ref([])
 const msgSearching = ref(false)
@@ -224,8 +205,6 @@ watch(searchQuery, (q) => {
     msgSearching.value = false
   }, 500)
 })
-
-const themeTitle = computed(() => theme.value === 'light' ? 'Switch to dark mode' : 'Switch to light mode')
 
 const filteredConversations = computed(() => {
   if (!searchQuery.value.trim()) return props.conversations
@@ -282,16 +261,6 @@ async function toggleStarred() {
     starredLoading.value = false
   }
 }
-
-onMounted(() => {
-  const saved = localStorage.getItem('theme')
-  if (saved) theme.value = saved
-  else if (window.matchMedia('(prefers-color-scheme: dark)').matches) theme.value = 'dark'
-  applyTheme()
-})
-
-function applyTheme() { document.documentElement.setAttribute('data-theme', theme.value) }
-function toggleTheme() { theme.value = theme.value === 'light' ? 'dark' : 'light'; localStorage.setItem('theme', theme.value); applyTheme() }
 
 function startRename(conv) {
   renamingId.value = conv.id
