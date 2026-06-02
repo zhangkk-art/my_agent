@@ -12,11 +12,13 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -44,6 +46,11 @@ public class KnowledgeService {
     private final DocumentParserService parserService;
     private final KnowledgeDocumentMapper docMapper;
     private final CacheManager cacheManager;
+
+    // Self-injection via proxy so @Transactional/@CacheEvict on internal calls work correctly.
+    // @Lazy breaks the circular dependency that would otherwise occur.
+    @Autowired @Lazy
+    private KnowledgeService self;
 
     @Value("${app.elasticsearch.kb-dir:./knowledge-base}")
     private String kbDirPath;
@@ -95,7 +102,7 @@ public class KnowledgeService {
      * - Changed files (hash mismatch) → delete old chunks and re-index
      * - Files removed from disk → delete their DB record and ES chunks
      */
-    public RefreshResult loadFromDirectory() {
+    public synchronized RefreshResult loadFromDirectory() {
         Path dir = Paths.get(kbDirPath);
         if (!Files.isDirectory(dir)) {
             try {
@@ -129,15 +136,15 @@ public class KnowledgeService {
 
                     KnowledgeDocument existing = indexedByName.get(name);
                     if (existing == null) {
-                        // New file
-                        uploadDocumentBytes(name, contentType, bytes, hash);
+                        // New file — call through proxy so @Transactional/@CacheEvict apply
+                        self.uploadDocumentBytes(name, contentType, bytes, hash);
                         added++;
                         log.info("Knowledge base: indexed new file '{}'", name);
                     } else if (!hash.equals(existing.getFileHash())) {
-                        // File content changed — delete old and re-index
+                        // File content changed — delete old and re-index via proxy
                         log.info("Knowledge base: '{}' changed (hash mismatch), re-indexing...", name);
-                        deleteDocument(existing.getId());
-                        uploadDocumentBytes(name, contentType, bytes, hash);
+                        self.deleteDocument(existing.getId());
+                        self.uploadDocumentBytes(name, contentType, bytes, hash);
                         updated++;
                     } else {
                         log.debug("Knowledge base: '{}' unchanged, skipping", name);
@@ -154,7 +161,7 @@ public class KnowledgeService {
         for (Map.Entry<String, KnowledgeDocument> entry : indexedByName.entrySet()) {
             if (!diskFiles.contains(entry.getKey())) {
                 try {
-                    deleteDocument(entry.getValue().getId());
+                    self.deleteDocument(entry.getValue().getId());
                     removed++;
                     log.info("Knowledge base: removed stale record for deleted file '{}'", entry.getKey());
                 } catch (Exception e) {

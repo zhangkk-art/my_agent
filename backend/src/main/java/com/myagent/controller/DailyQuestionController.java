@@ -37,7 +37,8 @@ public class DailyQuestionController {
      * Survives server restarts — no more cold-start regeneration cost.
      */
     @GetMapping("/questions/daily")
-    @Cacheable(value = "daily_questions", key = "T(java.time.LocalDate).now().toString()")
+    @Cacheable(value = "daily_questions", key = "T(java.time.LocalDate).now().toString()",
+               unless = "#result == null || #result.isEmpty()")
     public List<String> getDailyQuestions() {
         String today = LocalDate.now().toString();
         log.info("Generating daily questions for {} (cache miss)", today);
