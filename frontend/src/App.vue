@@ -1,14 +1,17 @@
 <template>
+  <!-- Login view -->
+  <LoginView v-if="!isLoggedIn && !sharedMode" @logged-in="handleLoggedIn" />
   <!-- Shared conversation view -->
-  <SharedView v-if="sharedMode" :conversation="sharedConversation" :loading="sharedLoading" />
+  <SharedView v-else-if="sharedMode" :conversation="sharedConversation" :loading="sharedLoading" />
   <!-- Normal app layout -->
-  <div v-else class="app-layout">
+  <div v-else-if="isLoggedIn" class="app-layout">
     <div v-if="sidebarRef?.sidebarOpen" class="sidebar-overlay" @click="sidebarRef.sidebarOpen = false"></div>
     <Sidebar
       ref="sidebarRef"
       :conversations="conversations"
       :activeId="activeConversationId"
       :width="sidebarWidth"
+      :username="currentUsername"
       @select="selectConversation"
       @selectMessage="handleSelectMessage"
       @new="newConversation"
@@ -19,6 +22,7 @@
       @import="handleImportConversation"
       @bulkDelete="handleBulkDelete"
       @openSettings="showSettings = true"
+      @logout="handleLogout"
     />
     <div
       class="resize-handle"
@@ -75,7 +79,29 @@ import ChatArea from './components/ChatArea.vue'
 import Toast from './components/Toast.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import SharedView from './components/SharedView.vue'
+import LoginView from './components/LoginView.vue'
 import * as api from './api/index.js'
+
+// ── Auth ──
+const token = ref(localStorage.getItem('token'))
+const isLoggedIn = computed(() => !!token.value)
+const currentUsername = ref(localStorage.getItem('username') || '')
+
+function handleLoggedIn(username) {
+  token.value = localStorage.getItem('token')
+  currentUsername.value = username
+  // Load conversations after login
+  api.getConversations().then(list => { conversations.value = list }).catch(() => {})
+}
+
+function handleLogout() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('username')
+  token.value = null
+  currentUsername.value = ''
+  conversations.value = []
+  activeConversationId.value = null
+}
 
 const DEFAULT_SETTINGS = {
   fontSize: 'medium',
@@ -243,15 +269,21 @@ onMounted(async () => {
     if (settings.value.theme === 'system') applyTheme('system')
   })
   window.addEventListener('keydown', handleGlobalKeydown)
-  try {
-    conversations.value = await api.getConversations()
-  } catch (e) {
-    toastRef.value?.show('加载会话列表失败', 'error')
+  window.addEventListener('auth:logout', handleLogout)
+  if (isLoggedIn.value) {
+    try {
+      conversations.value = await api.getConversations()
+    } catch (e) {
+      if (e.message !== 'Unauthorized') {
+        toastRef.value?.show('加载会话列表失败', 'error')
+      }
+    }
   }
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('auth:logout', handleLogout)
 })
 
 async function selectConversation(id) {

@@ -9,6 +9,14 @@
         <span>Ayer</span>
       </div>
       <div class="header-actions">
+        <span v-if="username" class="username-badge" :title="username">{{ username }}</span>
+        <button class="btn-icon" title="退出登录" @click="$emit('logout')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
         <button class="btn-icon" title="设置" @click="$emit('openSettings')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/>
@@ -169,10 +177,11 @@ import ConvItem from './ConvItem.vue'
 const props = defineProps({
   conversations: Array,
   activeId: String,
-  width: { type: Number, default: 280 }
+  width: { type: Number, default: 280 },
+  username: { type: String, default: '' }
 })
 
-const emit = defineEmits(['select', 'selectMessage', 'new', 'delete', 'rename', 'openSettings', 'pin', 'setFolder', 'import', 'bulkDelete'])
+const emit = defineEmits(['select', 'selectMessage', 'new', 'delete', 'rename', 'openSettings', 'logout', 'pin', 'setFolder', 'import', 'bulkDelete'])
 
 const searchInputRef = ref(null)
 
@@ -337,6 +346,16 @@ defineExpose({ sidebarOpen, focusSearch })
 }
 .btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-icon.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+.username-badge {
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
 
 .btn-new-chat {
   display: flex; align-items: center; justify-content: center; gap: 6px; flex: 1;

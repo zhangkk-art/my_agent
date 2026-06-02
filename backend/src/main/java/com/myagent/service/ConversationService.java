@@ -34,9 +34,10 @@ public class ConversationService {
         this.cacheManager = cacheManager;
     }
 
-    public List<Conversation> getAllConversations() {
+    public List<Conversation> getAllConversations(String userId) {
         List<Conversation> conversations = conversationMapper.selectList(
                 new LambdaQueryWrapper<Conversation>()
+                        .eq(Conversation::getUserId, userId)
                         .orderByDesc(Conversation::getPinned)
                         .orderByDesc(Conversation::getUpdatedAt));
         for (Conversation conv : conversations) {
@@ -46,9 +47,8 @@ public class ConversationService {
     }
 
     @Transactional
-    public Conversation togglePin(String id) {
-        Conversation conv = conversationMapper.selectById(id);
-        if (conv == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+    public Conversation togglePin(String id, String userId) {
+        Conversation conv = getOwnedConversation(id, userId);
         conv.setPinned(conv.getPinned() == null || !conv.getPinned());
         conv.setUpdatedAt(LocalDateTime.now());
         conversationMapper.updateById(conv);
@@ -56,9 +56,8 @@ public class ConversationService {
     }
 
     @Transactional
-    public Conversation setFolder(String id, String folderName) {
-        Conversation conv = conversationMapper.selectById(id);
-        if (conv == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
+    public Conversation setFolder(String id, String folderName, String userId) {
+        Conversation conv = getOwnedConversation(id, userId);
         conv.setFolderName(folderName == null || folderName.isBlank() ? null : folderName.trim());
         conv.setUpdatedAt(LocalDateTime.now());
         conversationMapper.updateById(conv);
@@ -66,8 +65,8 @@ public class ConversationService {
     }
 
     @Transactional
-    public Conversation importConversation(String title, List<java.util.Map<String, String>> messages) {
-        Conversation conv = createConversation(title != null && !title.isBlank() ? title : "导入的对话");
+    public Conversation importConversation(String title, List<java.util.Map<String, String>> messages, String userId) {
+        Conversation conv = createConversation(title != null && !title.isBlank() ? title : "导入的对话", userId);
         for (java.util.Map<String, String> m : messages) {
             String role = m.getOrDefault("role", "user");
             String content = m.getOrDefault("content", "");
@@ -80,9 +79,10 @@ public class ConversationService {
     }
 
     @Transactional
-    public Conversation createConversation(String title) {
+    public Conversation createConversation(String title, String userId) {
         String id = UUID.randomUUID().toString();
         Conversation conversation = new Conversation(id, title);
+        conversation.setUserId(userId);
         conversationMapper.insert(conversation);
         return conversation;
     }
@@ -101,12 +101,20 @@ public class ConversationService {
         return conversation;
     }
 
-    @Transactional
-    public Conversation updateSystemPrompt(String id, String systemPrompt) {
+    private Conversation getOwnedConversation(String id, String userId) {
         Conversation conv = conversationMapper.selectById(id);
         if (conv == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
         }
+        if (userId != null && conv.getUserId() != null && !userId.equals(conv.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+        return conv;
+    }
+
+    @Transactional
+    public Conversation updateSystemPrompt(String id, String systemPrompt, String userId) {
+        Conversation conv = getOwnedConversation(id, userId);
         conv.setSystemPrompt(systemPrompt);
         conv.setUpdatedAt(LocalDateTime.now());
         conversationMapper.updateById(conv);
@@ -126,6 +134,15 @@ public class ConversationService {
     }
 
     @Transactional
+    public Conversation renameConversation(String id, String title, String userId) {
+        Conversation conversation = getOwnedConversation(id, userId);
+        conversation.setTitle(title);
+        conversation.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conversation);
+        return conversation;
+    }
+
+    @Transactional
     public Conversation touchConversation(String id) {
         Conversation conversation = conversationMapper.selectById(id);
         if (conversation == null) {
@@ -137,21 +154,19 @@ public class ConversationService {
     }
 
     @Transactional
-    public void deleteConversation(String id) {
-        if (!conversationMapper.exists(new LambdaQueryWrapper<Conversation>().eq(Conversation::getId, id))) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
-        }
-        messageMapper.delete(new LambdaQueryWrapper<Message>().eq(Message::getConversationId, id));
+    public void deleteConversation(String id, String userId) {
+        Conversation conv = getOwnedConversation(id, userId);
+        messageMapper.delete(new LambdaQueryWrapper<Message>().eq(Message::getConversationId, conv.getId()));
         conversationMapper.deleteById(id);
     }
 
     @Transactional
-    public Conversation prepareForStream(String conversationId, String userMessage) {
+    public Conversation prepareForStream(String conversationId, String userMessage, String userId) {
         Conversation conv;
         if (conversationId == null || conversationId.isEmpty()) {
             String title = userMessage != null && userMessage.length() > 10
                     ? userMessage.substring(0, 10) : userMessage;
-            conv = createConversation(title != null ? title : "New Chat");
+            conv = createConversation(title != null ? title : "New Chat", userId);
         } else {
             conv = getConversation(conversationId);
         }
@@ -170,10 +185,6 @@ public class ConversationService {
         return getConversation(conv.getId());
     }
 
-    /**
-     * Delete oldest messages when a conversation exceeds the limit.
-     * Uses a COUNT + SELECT + batch DELETE instead of N individual DELETEs.
-     */
     @Transactional
     public void trimMessages(String conversationId) {
         long count = messageMapper.selectCount(
@@ -212,8 +223,6 @@ public class ConversationService {
             }
         }
 
-        // Reload after deleting the assistant message so the user-message scan
-        // reflects the current DB state and finds the correct preceding user message.
         messages = messageMapper.selectList(
                 new LambdaQueryWrapper<Message>()
                         .eq(Message::getConversationId, conversationId)
@@ -239,15 +248,9 @@ public class ConversationService {
         return getConversation(conv.getId());
     }
 
-    /**
-     * Fork a conversation: copy all messages up to and including upToMessageId into a new conversation.
-     */
     @Transactional
-    public Conversation forkConversation(String conversationId, String upToMessageId) {
-        Conversation original = conversationMapper.selectById(conversationId);
-        if (original == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + conversationId);
-        }
+    public Conversation forkConversation(String conversationId, String upToMessageId, String userId) {
+        Conversation original = getOwnedConversation(conversationId, userId);
 
         List<Message> allMessages = messageMapper.selectList(
                 new LambdaQueryWrapper<Message>()
@@ -263,6 +266,7 @@ public class ConversationService {
         String newId = UUID.randomUUID().toString();
         Conversation forked = new Conversation(newId, original.getTitle() + " [分支]");
         forked.setSystemPrompt(original.getSystemPrompt());
+        forked.setUserId(userId);
         conversationMapper.insert(forked);
 
         for (Message m : toCopy) {
@@ -277,15 +281,9 @@ public class ConversationService {
         return getConversation(newId);
     }
 
-    /**
-     * Generate a share token for a conversation. Returns the existing token if already shared.
-     */
     @Transactional
-    public String shareConversation(String id) {
-        Conversation conv = conversationMapper.selectById(id);
-        if (conv == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
-        }
+    public String shareConversation(String id, String userId) {
+        Conversation conv = getOwnedConversation(id, userId);
         if (conv.getShareToken() != null && !conv.getShareToken().isBlank()) {
             return conv.getShareToken();
         }
@@ -296,17 +294,9 @@ public class ConversationService {
         return token;
     }
 
-    /**
-     * Revoke a share token, making the conversation private again.
-     * Evicts the specific cache entry so the revoked link stops working immediately.
-     */
     @Transactional
-    public void revokeShare(String id) {
-        Conversation conv = conversationMapper.selectById(id);
-        if (conv == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
-        }
-        // Precise eviction by token key before clearing the token in DB
+    public void revokeShare(String id, String userId) {
+        Conversation conv = getOwnedConversation(id, userId);
         if (conv.getShareToken() != null) {
             Cache cache = cacheManager.getCache("shared_conversations");
             if (cache != null) cache.evict(conv.getShareToken());
@@ -316,10 +306,6 @@ public class ConversationService {
         conversationMapper.updateById(conv);
     }
 
-    /**
-     * Get a conversation by its share token (public access).
-     * Cached for 10 minutes — cache is evicted immediately on revoke.
-     */
     @Cacheable(value = "shared_conversations", key = "#token")
     public Conversation getSharedConversation(String token) {
         List<Conversation> list = conversationMapper.selectList(

@@ -19,6 +19,17 @@ public class SchemaMigration implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        jdbcTemplate.execute(
+            "CREATE TABLE IF NOT EXISTS users (" +
+            "  id VARCHAR(36) PRIMARY KEY," +
+            "  username VARCHAR(50) NOT NULL UNIQUE," +
+            "  password_hash VARCHAR(255) NOT NULL," +
+            "  created_at DATETIME NOT NULL" +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        addColumnIfMissing("conversations", "user_id",
+                "ALTER TABLE conversations ADD COLUMN user_id VARCHAR(36) NULL DEFAULT NULL");
+        addIndexIfMissing("conversations", "idx_conversations_user_id",
+                "CREATE INDEX idx_conversations_user_id ON conversations(user_id)");
         addColumnIfMissing("conversations", "system_prompt",
                 "ALTER TABLE conversations ADD COLUMN system_prompt TEXT NULL DEFAULT NULL");
         addColumnIfMissing("messages", "reasoning",

@@ -2,6 +2,7 @@ package com.myagent.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myagent.model.*;
+import com.myagent.security.UserPrincipal;
 import com.myagent.service.ChatService;
 import com.myagent.service.ConversationService;
 import jakarta.servlet.AsyncContext;
@@ -15,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.Disposable;
 
@@ -53,23 +55,27 @@ public class ChatController {
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public void chatStream(@RequestBody ChatRequest request,
+    public void chatStream(@AuthenticationPrincipal UserPrincipal principal,
+                           @RequestBody ChatRequest request,
                            HttpServletRequest req,
                            HttpServletResponse resp) {
         log.info("chatStream — model='{}' webSearch={}", request.getModel(), request.isWebSearch());
         doStream(req, resp, chatService.chatStream(
                 request.getConversationId(), request.getMessage(), request.getModel(),
-                request.isWebSearch(), request.getTemperature(), request.getMaxTokens()));
+                request.isWebSearch(), request.getTemperature(), request.getMaxTokens(),
+                principal.getUserId()));
     }
 
     @PostMapping(value = "/chat/image", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public void chatImage(@RequestBody ChatRequest request,
+    public void chatImage(@AuthenticationPrincipal UserPrincipal principal,
+                          @RequestBody ChatRequest request,
                           HttpServletRequest req,
                           HttpServletResponse resp) {
         doStream(req, resp, chatService.chatImageStream(
                 request.getConversationId(), request.getMessage(), request.getModel(),
                 request.getImages(), request.isWebSearch(),
-                request.getTemperature(), request.getMaxTokens()));
+                request.getTemperature(), request.getMaxTokens(),
+                principal.getUserId()));
     }
 
     @PostMapping(value = "/chat/continue", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -107,11 +113,9 @@ public class ChatController {
                     chatResponse -> {
                         if (completed.get()) return;
                         try {
-                            // Capture token usage from metadata (available on last chunk)
                             if (chatResponse.getMetadata() != null && chatResponse.getMetadata().getUsage() != null) {
                                 lastUsage.set(chatResponse.getMetadata().getUsage());
                             }
-                            // Extract reasoning and content from ChatResponse
                             Generation gen = chatResponse.getResult();
                             if (gen == null) return;
                             var output = gen.getOutput();
@@ -194,14 +198,9 @@ public class ChatController {
                     }
             ));
 
-            // Cancel the LLM subscription when the client disconnects or times out
             asyncCtx.addListener(new AsyncListener() {
-                @Override public void onTimeout(AsyncEvent event) {
-                    dispose(subRef);
-                }
-                @Override public void onError(AsyncEvent event) {
-                    dispose(subRef);
-                }
+                @Override public void onTimeout(AsyncEvent event) { dispose(subRef); }
+                @Override public void onError(AsyncEvent event) { dispose(subRef); }
                 @Override public void onComplete(AsyncEvent event) {}
                 @Override public void onStartAsync(AsyncEvent event) {}
             });
@@ -211,10 +210,6 @@ public class ChatController {
         }
     }
 
-    /**
-     * Streams continuation content and appends it to an existing interrupted message.
-     * On completion sets interrupted=false; on IOException also appends partial content with interrupted=true.
-     */
     private void doStreamAppend(HttpServletRequest req, HttpServletResponse resp,
                                   ChatService.StreamContext ctx, String appendToMessageId) {
         AsyncContext asyncCtx = req.startAsync();
@@ -298,24 +293,14 @@ public class ChatController {
 
     private static void dispose(AtomicReference<Disposable> ref) {
         Disposable d = ref.get();
-        if (d != null && !d.isDisposed()) {
-            d.dispose();
-        }
+        if (d != null && !d.isDisposed()) d.dispose();
     }
 
-    /**
-     * Try to extract reasoning/thinking content from a Generation.
-     * Checks Generation metadata first, then ChatResponse-level metadata.
-     * Returns null if no reasoning content is available (most models don't provide it).
-     */
     private String extractReasoning(Generation gen) {
         if (gen == null) return null;
-        // Check Generation metadata — Spring AI stores reasoningContent here
         if (gen.getMetadata() != null) {
             Object r = gen.getMetadata().get("reasoningContent");
-            if (r != null && !r.toString().isEmpty()) {
-                return r.toString();
-            }
+            if (r != null && !r.toString().isEmpty()) return r.toString();
         }
         return null;
     }

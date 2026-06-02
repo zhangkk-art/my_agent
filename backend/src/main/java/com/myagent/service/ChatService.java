@@ -295,8 +295,9 @@ public class ChatService {
     }
 
     public StreamContext chatStream(String conversationId, String userMessage, String model,
-                                    boolean webSearch, Double temperature, Integer maxTokens) {
-        Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
+                                    boolean webSearch, Double temperature, Integer maxTokens,
+                                    String userId) {
+        Conversation conv = conversationService.prepareForStream(conversationId, userMessage, userId);
 
         List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
         if (!history.isEmpty() && history.get(history.size() - 1) instanceof UserMessage) {
@@ -385,8 +386,8 @@ public class ChatService {
 
     public StreamContext chatImageStream(String conversationId, String userMessage, String model,
                                          List<String> images, boolean webSearch,
-                                         Double temperature, Integer maxTokens) {
-        Conversation conv = conversationService.prepareForStream(conversationId, userMessage);
+                                         Double temperature, Integer maxTokens, String userId) {
+        Conversation conv = conversationService.prepareForStream(conversationId, userMessage, userId);
 
         List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
         List<Media> mediaList = new ArrayList<>();

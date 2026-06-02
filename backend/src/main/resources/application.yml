@@ -62,6 +62,9 @@ spring:
             #     BRAVE_API_KEY: "${BRAVE_API_KEY}"
 
 app:
+  jwt:
+    secret: ${JWT_SECRET:AyerAIAgentDefaultSecretKey2024ForJWT!!}
+    expiration-days: 7
   ai:
     qwen:
       api-key: ${DASHSCOPE_API_KEY:sk-1db11d8ad51c44caad5ef4e52e5ca41f}
