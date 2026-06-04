@@ -13,7 +13,7 @@
     <template v-else>
       <MessageBubble
         v-for="(msg, index) in messages"
-        :key="msg.id"
+        :key="msg._localKey ?? msg.id"
         :message="msg"
         :isStreaming="loading && msg === messages[messages.length - 1] && msg.role === 'assistant'"
         :isLastAi="msg.role === 'assistant' && index === messages.length - 1 && !loading"

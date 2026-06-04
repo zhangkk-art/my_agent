@@ -140,6 +140,7 @@ const activeConversationId = ref(null)
 const loading = ref(false)
 const conversationLoading = ref(false)
 const abortController = ref(null)
+const selectConvController = ref(null) // cancels stale selectConversation calls
 const sidebarRef = ref(null)
 const chatAreaRef = ref(null)
 const toastRef = ref(null)
@@ -287,6 +288,12 @@ onUnmounted(() => {
 })
 
 async function selectConversation(id) {
+  // Cancel any in-flight selectConversation (e.g. the stale call from the
+  // first click of a double-click, or a rapid re-click of the same item).
+  selectConvController.value?.abort()
+  const ctl = new AbortController()
+  selectConvController.value = ctl
+
   activeConversationId.value = id
   conversationLoading.value = true
   // Move to top immediately for instant feedback
@@ -297,18 +304,24 @@ async function selectConversation(id) {
   }
   // Update backend timestamp (non-critical, fire-and-forget)
   api.touchConversation(id).catch(() => {})
-  // Load full conversation data
+  // Load full conversation data; the same AbortController is used both as
+  // the fetch signal and to detect whether a newer call superseded this one.
+  const timer = setTimeout(() => ctl.abort(), 10000)
   try {
-    const updated = await api.getConversation(id)
+    const updated = await api.getConversation(id, ctl.signal)
+    if (ctl.signal.aborted) return
     const newIdx = conversations.value.findIndex(c => c.id === id)
     if (newIdx >= 0) {
-      conversations.value[newIdx] = updated
+      conversations.value.splice(newIdx, 1, updated)
     }
   } catch (e) {
-    toastRef.value?.show('加载会话失败', 'error')
+    if (e.name !== 'AbortError') toastRef.value?.show('加载会话失败', 'error')
   } finally {
-    conversationLoading.value = false
-    nextTick(() => chatAreaRef.value?.focusInput())
+    clearTimeout(timer)
+    if (!ctl.signal.aborted) {
+      conversationLoading.value = false
+      nextTick(() => chatAreaRef.value?.focusInput())
+    }
   }
 }
 
@@ -330,13 +343,17 @@ async function handleDeleteConversation(id) {
 }
 
 async function handleRenameConversation(id, title) {
+  const conv = conversations.value.find(c => c.id === id)
+  const oldTitle = conv?.title
+  if (conv) conv.title = title
   try {
-    await api.renameConversation(id, title)
-    const conv = conversations.value.find(c => c.id === id)
-    if (conv) {
-      conv.title = title
+    const updated = await api.renameConversation(id, title)
+    if (conv && updated) {
+      conv.title = updated.title
+      conv.updatedAt = updated.updatedAt
     }
   } catch (e) {
+    if (conv) conv.title = oldTitle
     toastRef.value?.show('重命名失败', 'error')
   }
 }
@@ -397,6 +414,7 @@ function sendStreamMessage(conversationId, message, images = [], webSearch = fal
     // Add empty assistant message for streaming
     conv.messages.push({
       id: 'streaming-' + crypto.randomUUID(),
+      _localKey: crypto.randomUUID(),
       conversationId,
       role: 'assistant',
       content: '',
@@ -584,6 +602,7 @@ function regenerateMessage() {
   // Add empty assistant message for streaming
   conv.messages.push({
     id: 'streaming-' + crypto.randomUUID(),
+    _localKey: crypto.randomUUID(),
     conversationId: activeConversationId.value,
     role: 'assistant',
     content: '',
@@ -669,6 +688,7 @@ async function handleEditMessage(messageId, newContent) {
 
     conv.messages.push({
       id: 'streaming-' + crypto.randomUUID(),
+      _localKey: crypto.randomUUID(),
       conversationId: activeConversationId.value,
       role: 'assistant',
       content: '',

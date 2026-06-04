@@ -88,10 +88,9 @@
             :conv="conv" :activeId="activeId" :bulkMode="bulkMode" :selected="selected"
             :renamingId="renamingId" :renameText="renameText" :folders="allFolders"
             @select="selectConv" @rename="startRename" @finishRename="finishRename"
-            @cancelRename="cancelRename" @pin="id => $emit('pin', id)"
-            @setFolder="(id, f) => $emit('setFolder', id, f)"
+            @cancelRename="cancelRename" @pin="handlePin"
+            @setFolder="handleSetFolder"
             @delete="confirmDelete" @toggleSelect="toggleSelect"
-            @update:renameText="v => renameText.value = v"
           />
         </template>
         <div v-else class="empty-list">No matching conversations</div>
@@ -119,10 +118,9 @@
             :conv="conv" :activeId="activeId" :bulkMode="bulkMode" :selected="selected"
             :renamingId="renamingId" :renameText="renameText" :folders="allFolders"
             @select="selectConv" @rename="startRename" @finishRename="finishRename"
-            @cancelRename="cancelRename" @pin="id => $emit('pin', id)"
-            @setFolder="(id, f) => $emit('setFolder', id, f)"
+            @cancelRename="cancelRename" @pin="handlePin"
+            @setFolder="handleSetFolder"
             @delete="confirmDelete" @toggleSelect="toggleSelect"
-            @update:renameText="v => renameText.value = v"
           />
         </template>
         <!-- Folder groups -->
@@ -144,7 +142,6 @@
               @cancelRename="cancelRename" @pin="id => $emit('pin', id)"
               @setFolder="(id, f) => $emit('setFolder', id, f)"
               @delete="confirmDelete" @toggleSelect="toggleSelect"
-              @update:renameText="v => renameText.value = v"
             />
           </template>
         </template>
@@ -156,10 +153,9 @@
             :conv="conv" :activeId="activeId" :bulkMode="bulkMode" :selected="selected"
             :renamingId="renamingId" :renameText="renameText" :folders="allFolders"
             @select="selectConv" @rename="startRename" @finishRename="finishRename"
-            @cancelRename="cancelRename" @pin="id => $emit('pin', id)"
-            @setFolder="(id, f) => $emit('setFolder', id, f)"
+            @cancelRename="cancelRename" @pin="handlePin"
+            @setFolder="handleSetFolder"
             @delete="confirmDelete" @toggleSelect="toggleSelect"
-            @update:renameText="v => renameText.value = v"
           />
         </template>
         <div v-if="conversations.length === 0" class="empty-list">No conversations yet</div>
@@ -169,7 +165,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, watch, reactive } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch, reactive } from 'vue'
 import { dateGroup } from '../utils/time.js'
 import * as api from '../api/index.js'
 import ConvItem from './ConvItem.vue'
@@ -248,7 +244,7 @@ const dateGroups = computed(() => {
     .map(k => ({ label: k, items: groups[k] }))
 })
 
-function selectConv(id) { sidebarOpen.value = false; emit('select', id) }
+function selectConv(id) { if (renamingId.value && renamingId.value !== id) { renamingId.value = null } sidebarOpen.value = false; emit('select', id) }
 function jumpToMessage(conversationId, messageId) { sidebarOpen.value = false; emit('selectMessage', conversationId, messageId) }
 function toggleFolderCollapse(name) { collapsedFolders.has(name) ? collapsedFolders.delete(name) : collapsedFolders.add(name) }
 function toggleBulkMode() { bulkMode.value = !bulkMode.value; if (!bulkMode.value) selected.clear() }
@@ -275,12 +271,13 @@ function startRename(conv) {
   renamingId.value = conv.id
   renameText.value = conv.title
 }
-function finishRename(conv) {
-  if (renameText.value.trim() && renameText.value.trim() !== conv.title) emit('rename', conv.id, renameText.value.trim())
+function finishRename(conv, currentText) {
+  if (!renamingId.value) return
+  const newTitle = (currentText ?? renameText.value).trim()
+  if (newTitle && newTitle !== conv.title) emit('rename', conv.id, newTitle)
   renamingId.value = null
 }
 function cancelRename() { renamingId.value = null }
-
 function highlightText(text) {
   if (!searchQuery.value.trim()) return text
   const escaped = searchQuery.value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -288,7 +285,18 @@ function highlightText(text) {
 }
 
 function confirmDelete(conv) {
+  cancelRename()
   if (window.confirm('Delete conversation "' + conv.title + '"?')) emit('delete', conv.id)
+}
+
+function handlePin(id) {
+  cancelRename()
+  emit('pin', id)
+}
+
+function handleSetFolder(id, folderName) {
+  cancelRename()
+  emit('setFolder', id, folderName)
 }
 
 async function onImportFile(e) {
@@ -326,6 +334,7 @@ function focusSearch() {
   nextTick(() => searchInputRef.value?.focus())
 }
 
+onUnmounted(() => { clearTimeout(searchTimer) })
 defineExpose({ sidebarOpen, focusSearch })
 </script>
 

@@ -187,7 +187,7 @@ function handleKeydown(e) {
     e.preventDefault()
     historyIndex.value = Math.min(historyIndex.value + 1, promptHistory.value.length - 1)
     text.value = promptHistory.value[historyIndex.value]
-    nextTick(adjustHeight)
+    nextTick(autoResize)
     return
   }
   // ↓ to cycle forward (or clear) when navigating history
@@ -195,7 +195,7 @@ function handleKeydown(e) {
     e.preventDefault()
     historyIndex.value--
     text.value = historyIndex.value >= 0 ? promptHistory.value[historyIndex.value] : ''
-    nextTick(adjustHeight)
+    nextTick(autoResize)
     return
   }
   // Any other key resets history navigation index

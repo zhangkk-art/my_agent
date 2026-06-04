@@ -190,8 +190,8 @@ export async function createConversation(title) {
   return res.json();
 }
 
-export async function getConversation(id) {
-  const res = await apiFetch(`${BASE_URL}/conversations/${id}`);
+export async function getConversation(id, signal) {
+  const res = await apiFetch(`${BASE_URL}/conversations/${id}`, { signal });
   if (!res.ok) throw new Error('Failed to fetch conversation');
   return res.json();
 }

@@ -16,14 +16,14 @@
       <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
     </svg>
 
-    <span class="conv-title" :title="conv.title" @dblclick.stop="$emit('rename', conv)">
+    <span class="conv-title" :title="conv.title" @mousedown="onTitleMouseDown">
       <template v-if="renamingId === conv.id">
         <input
           ref="renameInputRef"
           v-model="localRenameText"
           class="rename-input"
-          @blur="$emit('finishRename', conv)"
-          @keydown.enter="$emit('finishRename', conv)"
+          @blur="$emit('finishRename', conv, localRenameText)"
+          @keydown.enter.prevent="$emit('finishRename', conv, localRenameText)"
           @keydown.escape="$emit('cancelRename')"
           @click.stop
         />
@@ -104,10 +104,16 @@ watch(() => props.renamingId, id => {
   }
 })
 
-// Sync local text back up when finishing rename
-watch(localRenameText, v => {
-  if (props.renamingId === props.conv.id) emit('update:renameText', v)
-})
+
+
+let _lastTitleMd = 0
+function onTitleMouseDown() {
+  const now = Date.now()
+  if (now - _lastTitleMd < 500) {
+    emit('rename', props.conv)
+  }
+  _lastTitleMd = now
+}
 
 function onNewFolder(e) {
   const val = e.target.value.trim()
