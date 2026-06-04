@@ -10,6 +10,8 @@ import com.myagent.service.ChatService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -51,7 +53,7 @@ public class MessageController {
                         .in(Message::getConversationId, convIds)
                         .like(Message::getContent, q.trim())
                         .orderByDesc(Message::getCreatedAt)
-                        .last("LIMIT 30"));
+                        .last(safeLimit(30)));
 
         return messages.stream().map(m -> {
             Map<String, Object> r = new HashMap<>();
@@ -65,9 +67,29 @@ public class MessageController {
         }).collect(Collectors.toList());
     }
 
+
+    private void checkMessageOwnership(String messageId, String userId) {
+        Message message = messageMapper.selectById(messageId);
+        if (message == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found: " + messageId);
+        }
+        Conversation conv = conversationMapper.selectById(message.getConversationId());
+        if (conv == null || conv.getUserId() == null || !conv.getUserId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+    }
+
+    private void checkConversationOwnership(String conversationId, String userId) {
+        Conversation conv = conversationMapper.selectById(conversationId);
+        if (conv == null || conv.getUserId() == null || !conv.getUserId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+    }
     @PutMapping("/{id}")
-    public ResponseEntity<Message> updateMessage(@PathVariable String id,
+    public ResponseEntity<Message> updateMessage(@AuthenticationPrincipal UserPrincipal principal,
+                                                  @PathVariable String id,
                                                   @RequestBody Map<String, String> body) {
+        checkMessageOwnership(id, principal.getUserId());
         Message message = messageMapper.selectById(id);
         if (message == null) return ResponseEntity.notFound().build();
         message.setContent(body.getOrDefault("content", message.getContent()));
@@ -76,7 +98,9 @@ public class MessageController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteMessage(@PathVariable String id) {
+    public ResponseEntity<Void> deleteMessage(@AuthenticationPrincipal UserPrincipal principal,
+                                                    @PathVariable String id) {
+        checkMessageOwnership(id, principal.getUserId());
         Message message = messageMapper.selectById(id);
         if (message == null) return ResponseEntity.notFound().build();
         messageMapper.deleteById(id);
@@ -84,7 +108,9 @@ public class MessageController {
     }
 
     @PatchMapping("/{id}/star")
-    public ResponseEntity<Message> toggleStar(@PathVariable String id) {
+    public ResponseEntity<Message> toggleStar(@AuthenticationPrincipal UserPrincipal principal,
+                                                   @PathVariable String id) {
+        checkMessageOwnership(id, principal.getUserId());
         Message message = messageMapper.selectById(id);
         if (message == null) return ResponseEntity.notFound().build();
         message.setStarred(message.getStarred() == null || !message.getStarred());
@@ -93,8 +119,10 @@ public class MessageController {
     }
 
     @PatchMapping("/{id}/rating")
-    public ResponseEntity<Message> setRating(@PathVariable String id,
+    public ResponseEntity<Message> setRating(@AuthenticationPrincipal UserPrincipal principal,
+                                                   @PathVariable String id,
                                               @RequestBody Map<String, Object> body) {
+        checkMessageOwnership(id, principal.getUserId());
         Message message = messageMapper.selectById(id);
         if (message == null) return ResponseEntity.notFound().build();
         Object r = body.get("rating");
@@ -104,20 +132,24 @@ public class MessageController {
     }
 
     @PostMapping("/save-partial")
-    public ResponseEntity<Message> savePartial(@RequestBody Map<String, String> body) {
+    public ResponseEntity<Message> savePartial(@AuthenticationPrincipal UserPrincipal principal,
+                                                   @RequestBody Map<String, String> body) {
         String conversationId = body.get("conversationId");
         String content = body.get("content");
         String reasoning = body.get("reasoning");
         if (conversationId == null || conversationId.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
+        checkConversationOwnership(conversationId, principal.getUserId());
         Message saved = chatService.saveInterruptedResponse(conversationId, content, reasoning);
         return ResponseEntity.ok(saved);
     }
 
     @PatchMapping("/{id}/interrupted")
-    public ResponseEntity<Message> markInterrupted(@PathVariable String id,
+    public ResponseEntity<Message> markInterrupted(@AuthenticationPrincipal UserPrincipal principal,
+                                                    @PathVariable String id,
                                                     @RequestBody Map<String, String> body) {
+        checkMessageOwnership(id, principal.getUserId());
         Message message = messageMapper.selectById(id);
         if (message == null) return ResponseEntity.notFound().build();
         String content = body.get("content");
@@ -144,7 +176,7 @@ public class MessageController {
                         .in(Message::getConversationId, convIds)
                         .eq(Message::getStarred, true)
                         .orderByDesc(Message::getCreatedAt)
-                        .last("LIMIT 50"));
+                        .last(safeLimit(50)));
 
         return messages.stream().map(m -> {
             Map<String, Object> r = new HashMap<>();
@@ -155,5 +187,12 @@ public class MessageController {
             r.put("content", m.getContent());
             return r;
         }).collect(Collectors.toList());
+    }
+
+    private static String safeLimit(int n) {
+        if (n <= 0 || n > 1000) {
+            throw new IllegalArgumentException("Invalid limit: " + n);
+        }
+        return "LIMIT " + n;
     }
 }

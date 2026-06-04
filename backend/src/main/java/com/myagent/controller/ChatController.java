@@ -199,7 +199,19 @@ public class ChatController {
             ));
 
             asyncCtx.addListener(new AsyncListener() {
-                @Override public void onTimeout(AsyncEvent event) { dispose(subRef); }
+                @Override public void onTimeout(AsyncEvent event) {
+                    dispose(subRef);
+                    if (fullContent.length() > 0 || fullReasoning.length() > 0) {
+                        try {
+                            chatService.saveAssistantResponse(ctx.conversationId(),
+                                    fullContent.toString(),
+                                    fullReasoning.length() > 0 ? fullReasoning.toString() : null,
+                                    lastUsage.get());
+                        } catch (Exception ex) {
+                            log.error("Failed to save partial response on timeout for {}", ctx.conversationId(), ex);
+                        }
+                    }
+                }
                 @Override public void onError(AsyncEvent event) { dispose(subRef); }
                 @Override public void onComplete(AsyncEvent event) {}
                 @Override public void onStartAsync(AsyncEvent event) {}
@@ -280,7 +292,16 @@ public class ChatController {
             ));
 
             asyncCtx.addListener(new AsyncListener() {
-                @Override public void onTimeout(AsyncEvent event) { dispose(subRef); }
+                @Override public void onTimeout(AsyncEvent event) {
+                    dispose(subRef);
+                    if (addedContent.length() > 0) {
+                        try {
+                            chatService.appendToMessage(appendToMessageId, addedContent.toString(), true);
+                        } catch (Exception ex) {
+                            log.error("Failed to save continuation on timeout for {}", appendToMessageId, ex);
+                        }
+                    }
+                }
                 @Override public void onError(AsyncEvent event) { dispose(subRef); }
                 @Override public void onComplete(AsyncEvent event) {}
                 @Override public void onStartAsync(AsyncEvent event) {}

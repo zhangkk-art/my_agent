@@ -30,7 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -50,10 +50,12 @@ public class ChatService {
     private final ChatClientRegistry clientRegistry;
     private final ConversationService conversationService;
     private final ConversationMapper conversationMapper;
+    private final ExecutorService titleGenExecutor;
     private final MessageMapper messageMapper;
     private final String baseSystemPrompt;
 
     public ChatService(ChatClientRegistry clientRegistry,
+                       ExecutorService titleGenExecutor,
                        ConversationService conversationService,
                        ConversationMapper conversationMapper,
                        MessageMapper messageMapper) {
@@ -61,6 +63,7 @@ public class ChatService {
         this.conversationService = conversationService;
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
+        this.titleGenExecutor = titleGenExecutor;
         this.baseSystemPrompt = loadSystemPrompt();
     }
 
@@ -82,14 +85,40 @@ public class ChatService {
     private String buildDynamicSystemPrompt(String conversationId, String userMessage, boolean webSearch) {
         String base = buildSystemPrompt(conversationId);
 
+        // Pre-fetch time/weather server-side — bypasses unreliable streaming tool-calling.
+        // The model is instructed to use the injected data directly instead of invoking tools.
+        String requiredTool = detectRequiredTool(userMessage);
+        if ("getCurrentTime".equals(requiredTool)) {
+            try {
+                String timeResult = toolFunctions.getCurrentTime(
+                        new ToolFunctions.TimeRequest(null)).datetime();
+                base += "\n\n【系统指令】以下是服务端已获取的真实当前时间，请直接使用此数据回答用户，不要再调用 getCurrentTime 工具："
+                      + timeResult;
+                log.info("Pre-fetched time for system prompt: {}", timeResult);
+            } catch (Exception e) {
+                log.warn("Failed to pre-fetch time: {}", e.getMessage());
+            }
+        } else if ("getWeather".equals(requiredTool)) {
+            try {
+                String city = extractCity(userMessage);
+                String weatherResult = toolFunctions.getWeather(
+                        new ToolFunctions.WeatherRequest(city)).weather();
+                base += "\n\n【系统指令】以下是服务端已获取的 " + city + " 最新天气信息，请直接使用此数据回答用户，不要再调用 getWeather 工具：\n"
+                      + weatherResult;
+                log.info("Pre-fetched weather for {}: {} chars", city, weatherResult.length());
+            } catch (Exception e) {
+                log.warn("Failed to pre-fetch weather: {}", e.getMessage());
+            }
+        }
+
         if (!webSearch && detectWebSearchNeed(userMessage)) {
-            base += "\n\n【系统指令】用户的问题需要联网搜索才能准确回答，但用户尚未开启联网搜索功能。"
+            base += "【系统指令】用户的问题需要联网搜索才能准确回答，但用户尚未开启联网搜索功能。"
                   + "请友好地告知用户：这个问题需要联网搜索，请点击输入框左侧的地球图标开启联网搜索后再提问。"
                   + "绝对不要猜测或编造答案——没有联网搜索你无法获取这些实时信息。";
             log.info("Web search needed but disabled — prompting user to enable");
         }
         if (webSearch) {
-            base += "\n\n【系统指令】用户已开启联网搜索。对于任何需要最新信息、实时数据的问题，" +
+            base += "【系统指令】用户已开启联网搜索。对于任何需要最新信息、实时数据的问题，" +
                     "必须调用 searchWeb 工具搜索，绝对不要使用对话历史中旧的搜索结果——那些数据已经过时。";
         }
         return base;
@@ -119,6 +148,22 @@ public class ChatService {
      * Detect if the user's query likely needs web search to answer accurately.
      * Only triggers when webSearch toggle is off — tells the model to ask the user to enable it.
      */
+    /**
+     * Extract a Chinese city name from the user message for weather pre-fetch.
+     * Falls back to "Beijing" if no known city is detected.
+     */
+    private String extractCity(String message) {
+        if (message == null) return "Beijing";
+        String[] knownCities = {"上海", "北京", "广州", "深圳", "杭州",
+                "成都", "武汉", "南京", "重庆", "天津",
+                "苏州", "西安", "长沙", "青岛", "郑州",
+                "大连", "厦门", "福州"};
+        for (String city : knownCities) {
+            if (message.contains(city)) return city;
+        }
+        return "Beijing";
+    }
+
     private boolean detectWebSearchNeed(String userMessage) {
         if (userMessage == null || userMessage.isBlank()) return false;
         String msg = userMessage;
@@ -167,7 +212,7 @@ public class ChatService {
         if (conversationId == null || conversationId.isEmpty()) {
             String title = userMessage != null && userMessage.length() > 10
                     ? userMessage.substring(0, 10) : userMessage;
-            return conversationService.createConversation(title != null ? title : "New Chat");
+            return conversationService.createConversation(title != null ? title : "New Chat", null);
         }
         return conversationService.getConversation(conversationId);
     }
@@ -351,15 +396,25 @@ public class ChatService {
             List<Message> msgs = conv.getMessages();
             String userContent = msgs.get(0).getContent();
             String assistantContent = msgs.get(1).getContent();
-            CompletableFuture.runAsync(() -> generateTitle(conversationId, userContent, assistantContent));
+            titleGenExecutor.execute(() -> generateTitle(conversationId, userContent, assistantContent));
         }
         return saved;
     }
 
     private void generateTitle(String conversationId, String userContent, String assistantContent) {
         try {
+            // If user has already renamed the conversation, skip auto-generated title
+            String defaultTitle = userContent != null && userContent.length() > 10
+                    ? userContent.substring(0, 10)
+                    : userContent;
+            Conversation current = conversationMapper.selectById(conversationId);
+            if (current != null && !defaultTitle.equals(current.getTitle())) {
+                log.debug("Skipping auto-title for {}: user already renamed", conversationId);
+                return;
+            }
+
             String prompt = String.format(
-                "根据以下对话内容，生成一个简洁的中文标题。要求：不超过15个字，不加引号和书名号，直接输出标题文字。\n\n用户：%s\n助手：%s",
+                "根据以下对话内容，生成一个简洁的中文标题。要求：不超过15个字，不加引号和书名号，直接输出标题文字。用户：%s 助手：%s",
                 userContent.substring(0, Math.min(150, userContent.length())),
                 assistantContent.substring(0, Math.min(300, assistantContent.length()))
             );
@@ -367,6 +422,12 @@ public class ChatService {
             if (title != null && !title.isBlank()) {
                 title = title.trim().replaceAll("[\"'《》【】<>]", "").trim();
                 if (title.length() > 20) title = title.substring(0, 20);
+                // Re-check after the LLM call: user may have renamed during the 2-5s generation window
+                Conversation recheck = conversationMapper.selectById(conversationId);
+                if (recheck == null || !defaultTitle.equals(recheck.getTitle())) {
+                    log.debug("Skipping auto-title write for {}: title changed while generating", conversationId);
+                    return;
+                }
                 conversationService.renameConversation(conversationId, title);
                 log.debug("Generated title for conversation {}: {}", conversationId, title);
             }

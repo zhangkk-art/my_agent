@@ -33,8 +33,9 @@ public class ConversationController {
     }
 
     @GetMapping("/{id}")
-    public Conversation getConversation(@PathVariable String id) {
-        return conversationService.getConversation(id);
+    public Conversation getConversation(@AuthenticationPrincipal UserPrincipal principal,
+                                        @PathVariable String id) {
+        return conversationService.getConversation(id, principal.getUserId());
     }
 
     @PutMapping("/{id}")
@@ -54,8 +55,9 @@ public class ConversationController {
     }
 
     @PatchMapping("/{id}/touch")
-    public Conversation touchConversation(@PathVariable String id) {
-        return conversationService.touchConversation(id);
+    public Conversation touchConversation(@AuthenticationPrincipal UserPrincipal principal,
+                                          @PathVariable String id) {
+        return conversationService.touchConversation(id, principal.getUserId());
     }
 
     @DeleteMapping("/{id}")

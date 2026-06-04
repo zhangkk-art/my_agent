@@ -96,9 +96,20 @@ public class ConversationService {
                 new LambdaQueryWrapper<Message>()
                         .eq(Message::getConversationId, id)
                         .orderByAsc(Message::getCreatedAt)
-                        .last("LIMIT " + MAX_MESSAGES));
+                        .last(safeLimit(MAX_MESSAGES)));
         conversation.setMessages(messages);
         return conversation;
+    }
+
+    public Conversation getConversation(String id, String userId) {
+        Conversation conv = getOwnedConversation(id, userId);
+        List<Message> messages = messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, id)
+                        .orderByAsc(Message::getCreatedAt)
+                        .last(safeLimit(MAX_MESSAGES)));
+        conv.setMessages(messages);
+        return conv;
     }
 
     private Conversation getOwnedConversation(String id, String userId) {
@@ -143,11 +154,8 @@ public class ConversationService {
     }
 
     @Transactional
-    public Conversation touchConversation(String id) {
-        Conversation conversation = conversationMapper.selectById(id);
-        if (conversation == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
-        }
+    public Conversation touchConversation(String id, String userId) {
+        Conversation conversation = getOwnedConversation(id, userId);
         conversation.setUpdatedAt(LocalDateTime.now());
         conversationMapper.updateById(conversation);
         return conversation;
@@ -197,7 +205,7 @@ public class ConversationService {
                 new LambdaQueryWrapper<Message>()
                         .eq(Message::getConversationId, conversationId)
                         .orderByAsc(Message::getCreatedAt)
-                        .last("LIMIT " + excess));
+                        .last(safeLimit(excess)));
         if (!oldest.isEmpty()) {
             List<String> ids = oldest.stream()
                     .map(Message::getId)
@@ -319,8 +327,15 @@ public class ConversationService {
                 new LambdaQueryWrapper<Message>()
                         .eq(Message::getConversationId, conv.getId())
                         .orderByAsc(Message::getCreatedAt)
-                        .last("LIMIT " + MAX_MESSAGES));
+                        .last(safeLimit(MAX_MESSAGES)));
         conv.setMessages(messages);
         return conv;
+    }
+
+    private static String safeLimit(int n) {
+        if (n <= 0 || n > 1000) {
+            throw new IllegalArgumentException("Invalid limit: " + n);
+        }
+        return "LIMIT " + n;
     }
 }

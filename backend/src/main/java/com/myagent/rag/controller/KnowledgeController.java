@@ -3,6 +3,7 @@ package com.myagent.rag.controller;
 import com.myagent.model.ChatRequest;
 import com.myagent.rag.model.KnowledgeDocument;
 import com.myagent.rag.service.KnowledgeService;
+import com.myagent.security.UserPrincipal;
 import com.myagent.service.ChatService;
 import jakarta.servlet.AsyncContext;
 import jakarta.servlet.ServletOutputStream;
@@ -10,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -58,7 +60,8 @@ public class KnowledgeController {
      * RAG streaming chat — search knowledge base, inject context, stream answer.
      */
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public void ragChat(@RequestBody ChatRequest request,
+    public void ragChat(@AuthenticationPrincipal UserPrincipal principal,
+                        @RequestBody ChatRequest request,
                         HttpServletRequest req,
                         HttpServletResponse resp) throws Exception {
         // 1. Search knowledge base
@@ -92,7 +95,8 @@ public class KnowledgeController {
 
         ChatService.StreamContext ctx = chatService.chatStream(
                 request.getConversationId(), augmentedMessage,
-                request.getModel(), request.isWebSearch(), null, null);
+                request.getModel(), request.isWebSearch(), null, null,
+                principal != null ? principal.getUserId() : null);
 
         // Stream the response, appending citations at the end
         AsyncContext asyncCtx = req.startAsync();
