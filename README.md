@@ -11,6 +11,8 @@
 | AI 模型 | DeepSeek Chat / Qwen Plus | — |
 | ORM | MyBatis-Plus | 3.5.7 |
 | 数据库 | MySQL | 8.0+ |
+| 缓存 | Redis (Lettuce) | 7.x |
+| 认证 | Spring Security + JWT | — |
 | 前端 | Vue 3 + Vite | ^3.4 / ^5.4 |
 | Markdown | marked + highlight.js | ^12 / ^11.9 |
 | 数学公式 | KaTeX | ^0.17 |
@@ -77,6 +79,7 @@
 - Maven 3.8+
 - Node.js 18+
 - MySQL 8.0+
+- Redis 7.x（可选，无 Redis 时自动降级到直查数据库）
 
 ### 1. 克隆仓库
 
@@ -182,6 +185,7 @@ my_agent/
             ├── MessageBubble.vue               # 消息气泡（Markdown + TTS + 收藏 + 评分）
             ├── WelcomeScreen.vue               # 欢迎页（今日推荐 + Workflow 模板）
             ├── SettingsModal.vue               # 设置面板（外观 + 模板管理）
+            ├── LoginView.vue                   # 登录/注册页
             ├── SharedView.vue                  # 分享对话只读视图
             ├── ShortcutsModal.vue              # 键盘快捷键帮助弹窗
             └── Toast.vue                       # 全局通知
@@ -191,15 +195,22 @@ my_agent/
 
 | 表 | 主要字段 |
 |---|---------|
-| `conversations` | id · title · system_prompt · share_token · pinned · folder_name |
-| `messages` | id · conversation_id · role · content · reasoning · token 用量 · starred · rating |
+| `conversations` | id · title · system_prompt · share_token · pinned · folder_name · user_id · created_at · updated_at |
+| `messages` | id · conversation_id · role · content · reasoning · prompt_tokens · completion_tokens · total_tokens · starred · rating · interrupted · created_at（索引：`idx_msg_conv (conversation_id, created_at)`）|
 | `prompt_templates` | id · name · content · sort_order |
 | `workflow_templates` | id · name · description · system_prompt · initial_message |
 | `knowledge_documents` | id · name · content_type · chunk_count |
 
-所有表由 `schema.sql` 初始创建，增量字段（如 `pinned`、`starred` 等）由 `SchemaMigration` 在每次启动时自动补齐，**无需手动执行任何迁移脚本**。
+所有表由 `schema.sql` 初始创建，增量字段（如 `user_id`、`pinned`、`starred`、`interrupted` 等）由 `SchemaMigration` 在每次启动时自动补齐，**无需手动执行任何迁移脚本**。
 
 ## API 接口
+
+### 认证
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/login` | 登录，返回 JWT Token |
+| POST | `/api/auth/register` | 注册新用户 |
 
 ### 对话
 
@@ -268,16 +279,34 @@ spring:
       base-url: https://api.deepseek.com
       chat.options.model: deepseek-chat
 
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
 app:
   ai:
     qwen:
       api-key: ${DASHSCOPE_API_KEY}
       base-url: https://dashscope.aliyuncs.com/compatible-mode
       model: qwen-plus
+  jwt:
+    secret: ${JWT_SECRET:AyerAIAgentDefaultSecretKey2024ForJWT!!}
+    expiration-days: 7
   websearch:
     api-key: ${WEB_SEARCH_API_KEY}
     endpoint: https://api.bochaai.com/v1/web-search
 ```
+
+### 缓存说明
+
+Redis 用于缓存每日推荐问题、提示词模板、Workflow 模板、知识库文档和分享对话。当 Redis 不可用时，`RedisConfig.errorHandler()` 自动降级——日志输出 WARN，业务逻辑直接回退到数据库查询，不影响功能正常使用。
+
+### 用户认证
+
+所有 `/api/**` 端点（除 `/api/auth/**` 和 `/api/shared/**`）均需携带 `Authorization: Bearer <token>` 请求头。Token 通过 `/api/auth/login` 获取，默认 7 天有效。会话列表、消息发送、对话管理均按 `user_id` 隔离。
 
 ### 工作原理
 
@@ -288,6 +317,8 @@ app:
 **中断续传**：用户点击停止时，前端立即 `POST /api/messages/save-partial` 保存已流出内容（`interrupted=true`），消息气泡显示「继续生成」按钮；点击后调用 `POST /api/chat/continue`，后端以截断历史 + 合成"请继续"消息重建上下文并追加输出，完成后清除 `interrupted` 标记。
 
 **流式连接断开处理**：用户点击停止或关闭页面时，前端 `AbortController` 断开连接，后端捕获 `IOException` 后取消 Reactor 订阅，已流出的内容正常保存。
+
+**全文搜索取消**：侧边栏搜索框每次输入变化时，前一个尚未返回的请求会被 `AbortController` 立即取消，避免乱序结果覆盖最新查询，同时减少不必要的后端压力。
 
 **多模型架构**：`ChatClientRegistry` 启动时注册 DeepSeek 和 Qwen 两个 `ChatClient`，`ChatService` 根据请求的 `model` 字段动态选择，共享同一套流式处理逻辑。
 
