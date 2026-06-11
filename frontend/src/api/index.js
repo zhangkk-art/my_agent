@@ -446,6 +446,16 @@ export async function getConversationVideoTasks(conversationId) {
   return res.json();
 }
 
+export async function updateVideoTaskConversation(taskId, conversationId) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/tasks/${taskId}/conversation`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId })
+  });
+  if (!res.ok) throw new Error('Failed to update video task');
+  return res.json();
+}
+
 export async function getVideoGenTasks() {
   const res = await apiFetch(`${BASE_URL}/video-gen/tasks`);
   if (!res.ok) throw new Error('Failed to fetch video tasks');

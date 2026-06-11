@@ -103,6 +103,27 @@ public class VideoGenController {
     }
 
     /**
+     * Update the conversation ID for a task (used when conversation is created after submission).
+     */
+    @PatchMapping("/tasks/{id}/conversation")
+    public ResponseEntity<?> updateConversationId(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, String> body) {
+        try {
+            VideoGenTask task = videoGenService.getTask(id);
+            if (!task.getUserId().equals(principal.getUserId())) {
+                return ResponseEntity.status(403).body(Map.of("error", "无权修改此任务"));
+            }
+            String conversationId = body.get("conversationId");
+            videoGenService.updateConversationId(id, conversationId);
+            return ResponseEntity.ok(Map.of("updated", true));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
      * Delete a task and its local video file.
      */
     @DeleteMapping("/tasks/{id}")

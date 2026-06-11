@@ -245,14 +245,15 @@ async function handleVideoSubmitted(task) {
   // Close video mode and return to chat
   videoMode.value = false
 
-  // Create conversation if needed
+  // Create conversation if needed, then bind task to it
   if (!activeConversationId.value) {
     const title = (task.prompt || '视频生成').substring(0, 20)
     try {
       const conv = await api.createConversation(title)
       conversations.value.unshift(conv)
       activeConversationId.value = conv.id
-      // Update the task's conversationId
+      // Persist the conversationId association to backend
+      await api.updateVideoTaskConversation(task.id, conv.id).catch(() => {})
       task.conversationId = conv.id
       // Store video task for this conversation
       videoTasksByConv.value[conv.id] = [task]

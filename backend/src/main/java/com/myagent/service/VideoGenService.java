@@ -310,6 +310,17 @@ public class VideoGenService {
         taskMapper.deleteById(taskId);
     }
 
+    @Transactional
+    public void updateConversationId(String taskId, String conversationId) {
+        VideoGenTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new NoSuchElementException("Task not found: " + taskId);
+        }
+        task.setConversationId(conversationId);
+        task.setUpdatedAt(LocalDateTime.now());
+        taskMapper.updateById(task);
+    }
+
     public Path getVideoPath(String taskId) {
         VideoGenTask task = taskMapper.selectById(taskId);
         if (task == null || task.getVideoPath() == null) {
