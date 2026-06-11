@@ -119,7 +119,6 @@ public class VideoGenService {
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + "?" + query))
                     .header("Content-Type", "application/json")
-                    .header("Host", host)
                     .header("X-Date", xDate)
                     .header("Authorization", authorization)
                     .POST(HttpRequest.BodyPublishers.ofString(payload))
@@ -131,6 +130,7 @@ public class VideoGenService {
             if (response.statusCode() == 200) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+                @SuppressWarnings("unchecked")
                 Map<String, Object> data = (Map<String, Object>) result.get("data");
                 if (data != null && data.get("task_id") != null) {
                     task.setTaskId(data.get("task_id").toString());
@@ -192,7 +192,6 @@ public class VideoGenService {
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + "?" + query))
                     .header("Content-Type", "application/json")
-                    .header("Host", host)
                     .header("X-Date", xDate)
                     .header("Authorization", authorization)
                     .POST(HttpRequest.BodyPublishers.ofString(payload))
