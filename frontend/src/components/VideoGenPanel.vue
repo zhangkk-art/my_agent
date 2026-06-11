@@ -18,12 +18,19 @@
     <div class="vgp-body">
       <!-- Task list -->
       <div v-if="tasks.length > 0" class="vgp-task-list">
-        <div class="vgp-section-title">我的任务</div>
-        <div
-          v-for="task in tasks"
-          :key="task.id"
-          class="vgp-task-item"
-        >
+        <div class="vgp-section-title task-list-header" @click="tasksCollapsed = !tasksCollapsed">
+          <span>我的任务 ({{ tasks.length }})</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            class="collapse-chevron" :class="{ collapsed: tasksCollapsed }">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+        <template v-if="!tasksCollapsed">
+          <div
+            v-for="task in tasks"
+            :key="task.id"
+            class="vgp-task-item"
+          >
           <div class="task-status-icon">
             <template v-if="isPending(task.status)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
@@ -70,6 +77,7 @@
             </button>
           </div>
         </div>
+        </template>
       </div>
 
       <!-- Submit form -->
@@ -131,13 +139,18 @@
                 class="btn-option"
                 @click="duration = 10"
               >10秒</button>
+              <button
+                :class="{ active: duration === 12 }"
+                class="btn-option"
+                @click="duration = 12"
+              >12秒</button>
               <div class="duration-custom">
                 <input
                   type="number"
                   class="duration-input"
                   :value="duration"
-                  min="1"
-                  max="60"
+                  min="4"
+                  max="12"
                   step="1"
                   @input="onDurationInput"
                   @focus="onDurationFocus"
@@ -158,6 +171,62 @@
                 @click="aspectRatio = r"
               >{{ r }}</button>
             </div>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">嵌入字幕</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="subtitleEnabled" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">生成音频</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="generateAudio" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">字幕配音</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="narrateSubtitles" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">自定义字幕</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="customSubtitlesEnabled" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div v-if="customSubtitlesEnabled" class="custom-subtitles-editor">
+            <div class="subtitle-entries">
+              <div v-for="(entry, i) in customSubtitleEntries" :key="i" class="subtitle-entry">
+                <div class="subtitle-entry-header">
+                  <span class="entry-index">#{{ i + 1 }}</span>
+                  <button class="btn-remove-entry" @click="removeSubtitleEntry(i)" title="删除">✕</button>
+                </div>
+                <div class="entry-time-row">
+                  <input type="number" v-model.number="entry.startSec" class="entry-time" min="0" :max="duration" step="0.5" placeholder="0.0" />
+                  <span class="time-sep">→</span>
+                  <input type="number" v-model.number="entry.endSec" class="entry-time" min="0" :max="duration" step="0.5" placeholder="2.0" />
+                  <span class="time-unit">秒</span>
+                </div>
+                <input type="text" v-model="entry.text" class="entry-text" placeholder="输入字幕文字..." />
+              </div>
+            </div>
+            <button class="btn-add-subtitle" @click="addSubtitleEntry">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              添加字幕
+            </button>
           </div>
         </div>
 
@@ -193,7 +262,13 @@ const emit = defineEmits(['close', 'play', 'toast', 'videoSubmitted'])
 const prompt = ref('')
 const duration = ref(5)
 const aspectRatio = ref('16:9')
-const showAdvanced = ref(false)
+const subtitleEnabled = ref(false)
+const generateAudio = ref(true)
+const narrateSubtitles = ref(false)
+const tasksCollapsed = ref(true)
+const customSubtitlesEnabled = ref(false)
+const customSubtitleEntries = ref([])  // [{startSec, endSec, text}]
+const showAdvanced = ref(true)
 const submitting = ref(false)
 const tasks = ref([])
 const firstFramePreview = ref(null)
@@ -207,7 +282,7 @@ let pollTimer = null
 function onDurationInput(e) {
   const val = parseFloat(e.target.value)
   if (!isNaN(val) && val > 0) {
-    duration.value = Math.min(val, 60)
+    duration.value = Math.min(val, 12)
   }
 }
 
@@ -289,7 +364,11 @@ async function submitTask() {
       aspectRatio: aspectRatio.value,
       seed: -1,
       firstFrameBase64: firstFrameBase64.value,
-      conversationId: props.conversationId
+      conversationId: props.conversationId,
+      subtitleEnabled: subtitleEnabled.value,
+      generateAudio: generateAudio.value,
+      narrateSubtitles: narrateSubtitles.value,
+      customSubtitles: customSubtitlesEnabled.value ? customSubtitleEntries.value : null
     })
     const fullTask = {
       ...task,
@@ -337,6 +416,17 @@ function removeFirstFrame() {
   firstFramePreview.value = null
   firstFrameBase64.value = null
 }
+
+function addSubtitleEntry() {
+  const last = customSubtitleEntries.value[customSubtitleEntries.value.length - 1]
+  const startSec = last ? last.endSec : 0
+  const endSec = Math.min(startSec + 2, duration.value)
+  customSubtitleEntries.value.push({ startSec, endSec, text: '' })
+}
+
+function removeSubtitleEntry(index) {
+  customSubtitleEntries.value.splice(index, 1)
+}
 </script>
 
 <style scoped>
@@ -378,6 +468,28 @@ function removeFirstFrame() {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 10px;
+}
+
+.task-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 0;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.task-list-header:hover {
+  color: var(--text-secondary);
+}
+
+.collapse-chevron {
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.collapse-chevron.collapsed {
+  transform: rotate(-90deg);
 }
 
 /* Task list */
@@ -695,9 +807,128 @@ function removeFirstFrame() {
   cursor: not-allowed;
 }
 
+/* ── Custom subtitle editor ── */
+.custom-subtitles-editor {
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.subtitle-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.subtitle-entry {
+  background: var(--bg-hover);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.subtitle-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.entry-index {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.btn-remove-entry {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 0;
+}
+.btn-remove-entry:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.entry-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.entry-time {
+  width: 58px;
+  padding: 4px 6px;
+  background: var(--bg-input, var(--bg-card));
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: center;
+  outline: none;
+}
+.entry-time:focus {
+  border-color: var(--accent);
+}
+
+.time-sep {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.time-unit {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.entry-text {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--bg-input, var(--bg-card));
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+.entry-text:focus {
+  border-color: var(--accent);
+}
+.entry-text::placeholder {
+  color: var(--text-muted);
+}
+
+.btn-add-subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: var(--bg-hover);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-add-subtitle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .btn-icon-sm {
-  width: 32px;
-  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -708,5 +939,46 @@ function removeFirstFrame() {
 .btn-icon-sm:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* Toggle switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  cursor: pointer;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  top: 2px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  background: white;
+  transform: translateX(20px);
 }
 </style>

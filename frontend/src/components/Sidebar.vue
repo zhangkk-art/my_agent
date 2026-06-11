@@ -199,9 +199,11 @@ const starredLoading = ref(false)
 const collapsedFolders = reactive(new Set())
 
 let searchTimer = null
+let searchAbortController = null
 
 watch(searchQuery, (q) => {
   clearTimeout(searchTimer)
+  if (searchAbortController) { searchAbortController.abort() }
   msgResults.value = []
   if (q.trim().length < 2) return
   msgSearching.value = true
@@ -334,7 +336,7 @@ function focusSearch() {
   nextTick(() => searchInputRef.value?.focus())
 }
 
-onUnmounted(() => { clearTimeout(searchTimer) })
+onUnmounted(() => { clearTimeout(searchTimer); if (searchAbortController) searchAbortController.abort() })
 defineExpose({ sidebarOpen, focusSearch })
 </script>
 

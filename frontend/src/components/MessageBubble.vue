@@ -22,6 +22,33 @@
         <!-- Prompt text always visible -->
         <div class="video-msg-prompt">{{ message.content }}</div>
 
+        <!-- Subtitle text display (the text burned into video) -->
+        <div v-if="message.content" class="video-subtitle-display">
+          <div class="subtitle-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 15h10M7 11h6"/>
+            </svg>
+            字幕
+            <button
+              class="btn-read-subtitles"
+              :class="{ speaking: isReadingSubtitles }"
+              @click="toggleReadSubtitles"
+              :title="isReadingSubtitles ? '停止朗读' : '朗读字幕'"
+            >
+              <svg v-if="!isReadingSubtitles" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>
+              </svg>
+              <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+              </svg>
+            </button>
+          </div>
+          <div class="subtitle-lines">
+            <p v-for="(line, i) in subtitleLines" :key="i">{{ line }}</p>
+          </div>
+        </div>
+
         <!-- Video placeholder: dark rounded container -->
         <div class="video-placeholder" :class="{ loaded: inlineVideoUrl }" @click="onPlaceholderClick">
           <!-- Actual video player (replaces placeholder when loaded) -->
@@ -396,6 +423,16 @@ const inlineVideoUrl = ref('')
 const videoLoading = ref(false)
 const videoError = ref(false)
 
+const subtitleLines = computed(() => {
+  const text = props.message.content
+  if (!text) return []
+  // Split by punctuation — mirrors backend SRT generation
+  return text.split(/[。！？\n.!?]+/)
+    .flatMap(c => c.trim().length > 30 ? c.split(/[，,；;]+/) : [c])
+    .map(c => c.trim())
+    .filter(c => c.length > 0)
+})
+
 const isVideoPending = computed(() => {
   if (!props.message.videoTask) return false
   const s = props.message.videoTask.status
@@ -441,6 +478,28 @@ async function loadInlineVideo() {
   } finally {
     videoLoading.value = false
   }
+}
+
+const isReadingSubtitles = ref(false)
+
+function toggleReadSubtitles() {
+  const synth = window.speechSynthesis
+  if (!synth) return
+  if (isReadingSubtitles.value) {
+    synth.cancel()
+    isReadingSubtitles.value = false
+    return
+  }
+  const text = subtitleLines.value.join('。')
+  if (!text) return
+  const utt = new SpeechSynthesisUtterance(text)
+  utt.lang = 'zh-CN'
+  utt.rate = 0.9
+  utt.onend = () => { isReadingSubtitles.value = false }
+  utt.onerror = () => { isReadingSubtitles.value = false }
+  synth.cancel()
+  synth.speak(utt)
+  isReadingSubtitles.value = true
 }
 
 const hovered = ref(false)
@@ -959,6 +1018,61 @@ function doDelete() {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ── Subtitle text display ── */
+.video-subtitle-display {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.subtitle-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.subtitle-lines p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin: 0;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--border-color);
+}
+.subtitle-lines p:last-child {
+  border-bottom: none;
+}
+
+.btn-read-subtitles {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 3px 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-read-subtitles:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-read-subtitles.speaking {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* ── Placeholder: dark video-like container ── */
