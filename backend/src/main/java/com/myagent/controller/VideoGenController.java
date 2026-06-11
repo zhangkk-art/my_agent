@@ -91,12 +91,16 @@ public class VideoGenController {
     public ResponseEntity<?> deleteTask(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable String id) {
-        VideoGenTask task = videoGenService.getTask(id);
-        if (task == null || !task.getUserId().equals(principal.getUserId())) {
-            return ResponseEntity.status(403).body(Map.of("error", "无权删除此任务"));
+        try {
+            VideoGenTask task = videoGenService.getTask(id);
+            if (!task.getUserId().equals(principal.getUserId())) {
+                return ResponseEntity.status(403).body(Map.of("error", "无权删除此任务"));
+            }
+            videoGenService.deleteTask(id);
+            return ResponseEntity.ok(Map.of("deleted", true));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
         }
-        videoGenService.deleteTask(id);
-        return ResponseEntity.ok(Map.of("deleted", true));
     }
 
     /**
@@ -106,22 +110,26 @@ public class VideoGenController {
     public ResponseEntity<?> getVideo(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable String id) {
-        VideoGenTask task = videoGenService.getTask(id);
-        if (task == null || !task.getUserId().equals(principal.getUserId())) {
-            return ResponseEntity.status(403).body(Map.of("error", "无权访问此视频"));
-        }
-        if (!"SUCCEEDED".equals(task.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "视频尚未生成完成"));
-        }
-        Path videoPath = videoGenService.getVideoPath(id);
-        if (videoPath == null) {
+        try {
+            VideoGenTask task = videoGenService.getTask(id);
+            if (!task.getUserId().equals(principal.getUserId())) {
+                return ResponseEntity.status(403).body(Map.of("error", "无权访问此视频"));
+            }
+            if (!"SUCCEEDED".equals(task.getStatus())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "视频尚未生成完成"));
+            }
+            Path videoPath = videoGenService.getVideoPath(id);
+            if (videoPath == null) {
+                return ResponseEntity.notFound().build();
+            }
+            Resource resource = new FileSystemResource(videoPath);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("video/mp4"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + id + ".mp4\"")
+                    .body(resource);
+        } catch (NoSuchElementException e) {
             return ResponseEntity.notFound().build();
         }
-        Resource resource = new FileSystemResource(videoPath);
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("video/mp4"))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + id + ".mp4\"")
-                .body(resource);
     }
 
     /**

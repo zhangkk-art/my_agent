@@ -113,8 +113,8 @@ public class VideoGenService {
             String host = URI.create(endpoint).getHost();
             String path = "/";
 
-            String xDate = signer.getXDate();
-            String authorization = signer.sign("POST", path, query, payload, host);
+            String xDate = IamV4Signer.generateXDate();
+            String authorization = signer.sign("POST", path, query, payload, host, xDate);
 
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + "?" + query))
@@ -186,8 +186,8 @@ public class VideoGenService {
             String host = URI.create(endpoint).getHost();
             String path = "/";
 
-            String xDate = signer.getXDate();
-            String authorization = signer.sign("POST", path, query, payload, host);
+            String xDate = IamV4Signer.generateXDate();
+            String authorization = signer.sign("POST", path, query, payload, host, xDate);
 
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + "?" + query))

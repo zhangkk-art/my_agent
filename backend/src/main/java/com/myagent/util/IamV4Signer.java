@@ -9,8 +9,16 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * IAM v4 HMAC-SHA256 signer for Volcengine visual API (cv service).
- * Generates Authorization header for requests to visual.volcengineapi.com.
+ * Volcengine IAM v4 HMAC-SHA256 signer for visual API (cv service).
+ *
+ * Volcengine signing spec:
+ *   kSecret  = SecretAccessKey (raw bytes)
+ *   kDate    = HMAC(kSecret,  YYYYMMDD)
+ *   kRegion  = HMAC(kDate,    region)
+ *   kService = HMAC(kRegion,  service)
+ *   kSigning = HMAC(kService, "request")
+ *
+ * Note: No prefix (like AWS4 or HMAC) is appended to the secret key.
  */
 public class IamV4Signer {
 
@@ -19,29 +27,37 @@ public class IamV4Signer {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
 
     private final String accessKey;
-    private final String secretKey;
+    private final byte[] secretKeyBytes;
     private final String region;
     private final String service;
 
     public IamV4Signer(String accessKey, String secretKey, String region, String service) {
         this.accessKey = accessKey;
-        this.secretKey = secretKey;
+        this.secretKeyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
         this.region = region;
         this.service = service;
     }
 
     /**
-     * Generate the Authorization header value for the given request details.
+     * Generate a fresh X-Date timestamp.
      */
-    public String sign(String method, String path, String query, String payload, String host) {
-        ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
-        String xDate = TIME_FMT.format(now);
-        String dateStamp = DATE_FMT.format(now);
+    public static String generateXDate() {
+        return TIME_FMT.format(ZonedDateTime.now(ZoneOffset.UTC));
+    }
+
+    /**
+     * Generate the Authorization header value.
+     * @param xDate the X-Date header value (must match what's sent in the request)
+     */
+    public String sign(String method, String path, String query, String payload, String host, String xDate) {
+        String dateStamp = xDate.substring(0, 8); // "YYYYMMDD" from "YYYYMMDDTHHMMSSZ"
 
         String hashedPayload = sha256Hex(payload);
 
         // Canonical Request
-        String canonicalHeaders = "content-type:application/json\nhost:" + host + "\nx-date:" + xDate + "\n";
+        String canonicalHeaders = "content-type:application/json\n"
+                + "host:" + host + "\n"
+                + "x-date:" + xDate + "\n";
         String signedHeaders = "content-type;host;x-date";
         String canonicalRequest = method + "\n"
                 + path + "\n"
@@ -59,8 +75,8 @@ public class IamV4Signer {
                 + credentialScope + "\n"
                 + sha256Hex(canonicalRequest);
 
-        // Signing key derivation
-        byte[] kDate = hmacSha256(("HMAC" + secretKey).getBytes(StandardCharsets.UTF_8), dateStamp);
+        // Signing key derivation — Volcengine uses raw secret key (no prefix)
+        byte[] kDate = hmacSha256(secretKeyBytes, dateStamp);
         byte[] kRegion = hmacSha256(kDate, region);
         byte[] kService = hmacSha256(kRegion, service);
         byte[] kSigning = hmacSha256(kService, "request");
@@ -72,13 +88,6 @@ public class IamV4Signer {
         return ALGORITHM + " Credential=" + accessKey + "/" + credentialScope
                 + ", SignedHeaders=" + signedHeaders
                 + ", Signature=" + signatureHex;
-    }
-
-    /**
-     * Returns the X-Date header value for this signing request.
-     */
-    public String getXDate() {
-        return TIME_FMT.format(ZonedDateTime.now(ZoneOffset.UTC));
     }
 
     // ── Crypto helpers ──
