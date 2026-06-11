@@ -22,6 +22,8 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Service
 public class VideoGenService {
@@ -35,6 +37,7 @@ public class VideoGenService {
     private final String endpoint;
     private final String model;
     private final Path storagePath;
+    private final ExecutorService downloadExecutor = Executors.newSingleThreadExecutor();
 
     public VideoGenService(
             VideoGenTaskMapper taskMapper,
@@ -202,10 +205,25 @@ public class VideoGenService {
 
                     if (videoUrl != null && !videoUrl.isBlank()) {
                         task.setOriginalVideoUrl(videoUrl);
-                        String localPath = downloadVideo(videoUrl, task.getId());
-                        task.setVideoPath(localPath);
                         task.setStatus("SUCCEEDED");
-                        log.info("Ark task {} succeeded, video saved to {}", task.getId(), localPath);
+                        log.info("Ark task {} succeeded, starting async download from {}", task.getId(), videoUrl);
+                        // Download asynchronously to avoid blocking the poll response
+                        final String url = videoUrl;
+                        final String tid = task.getId();
+                        downloadExecutor.submit(() -> {
+                            try {
+                                String localPath = downloadVideo(url, tid);
+                                VideoGenTask t = taskMapper.selectById(tid);
+                                if (t != null) {
+                                    t.setVideoPath(localPath);
+                                    t.setUpdatedAt(LocalDateTime.now());
+                                    taskMapper.updateById(t);
+                                }
+                                log.info("Video downloaded for task {}: {}", tid, localPath);
+                            } catch (Exception e) {
+                                log.error("Async download failed for task {}", tid, e);
+                            }
+                        });
                     } else {
                         task.setStatus("FAILED");
                         task.setErrorMessage("Ark返回成功但未包含视频URL");

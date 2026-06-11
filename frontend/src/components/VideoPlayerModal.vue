@@ -12,7 +12,20 @@
             </button>
           </div>
           <div class="video-modal-body">
+            <div v-if="loading" class="video-loading">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+              <span>加载视频中...</span>
+            </div>
+            <div v-else-if="error" class="video-error">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+              <span>视频加载失败</span>
+            </div>
             <video
+              v-else
               ref="videoRef"
               :src="videoUrl"
               controls
@@ -30,8 +43,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { getVideoUrl } from '../api/index.js'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -42,17 +54,43 @@ const emit = defineEmits(['close'])
 
 const videoRef = ref(null)
 const error = ref(false)
+const videoUrl = ref('')
+const loading = ref(false)
 
-const videoUrl = computed(() => {
-  if (!props.task) return ''
-  return getVideoUrl(props.task.id)
+watch(() => [props.visible, props.task], async ([visible, task]) => {
+  if (visible && task) {
+    await loadVideo(task.id)
+  }
 })
 
-function close() {
+async function loadVideo(taskId) {
+  loading.value = true
   error.value = false
+  videoUrl.value = ''
+  try {
+    const token = localStorage.getItem('token')
+    const res = await fetch(`/api/video-gen/tasks/${taskId}/video`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!res.ok) throw new Error('Failed to load video')
+    const blob = await res.blob()
+    videoUrl.value = URL.createObjectURL(blob)
+  } catch (e) {
+    error.value = true
+    console.error('Failed to load video:', e)
+  } finally {
+    loading.value = false
+  }
+}
+
+function close() {
+  if (videoUrl.value) {
+    URL.revokeObjectURL(videoUrl.value)
+  }
+  error.value = false
+  videoUrl.value = ''
   if (videoRef.value) {
     videoRef.value.pause()
-    videoRef.value.currentTime = 0
   }
   emit('close')
 }
@@ -132,6 +170,18 @@ function onError() {
   max-height: 80vh;
   outline: none;
 }
+
+.video-loading, .video-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255,255,255,0.7);
+  font-size: 14px;
+}
+
+.spin { animation: spin 1.5s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Transition */
 .modal-enter-active { transition: opacity 0.2s ease; }
