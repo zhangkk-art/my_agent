@@ -52,12 +52,12 @@
             <button
               v-if="task.status === 'SUCCEEDED'"
               class="btn-play"
-              title="播放"
               @click="$emit('play', task)"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                 <polygon points="8 5 19 12 8 19 8 5"/>
               </svg>
+              播放
             </button>
             <button
               class="btn-delete-task"
@@ -415,15 +415,16 @@ function removeFirstFrame() {
 }
 
 .btn-play {
-  width: 28px;
-  height: 28px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
+  padding: 5px 10px;
   background: var(--success);
   color: white;
   border-radius: 6px;
-  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 .btn-play:hover {
   opacity: 0.85;
