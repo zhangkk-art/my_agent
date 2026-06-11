@@ -58,6 +58,29 @@ public class SchemaMigration implements ApplicationRunner {
                 "ALTER TABLE knowledge_documents ADD COLUMN file_hash VARCHAR(64) NULL DEFAULT NULL");
         addColumnIfMissing("knowledge_documents", "updated_at",
                 "ALTER TABLE knowledge_documents ADD COLUMN updated_at DATETIME NULL DEFAULT NULL");
+
+        // Video generation tasks table
+        jdbcTemplate.execute(
+            "CREATE TABLE IF NOT EXISTS video_gen_tasks (" +
+            "  id VARCHAR(36) PRIMARY KEY," +
+            "  user_id BIGINT NOT NULL," +
+            "  conversation_id VARCHAR(36)," +
+            "  prompt TEXT NOT NULL," +
+            "  req_key VARCHAR(64) NOT NULL DEFAULT 'jimeng_ti2v_v30_pro'," +
+            "  frames INT DEFAULT 121," +
+            "  aspect_ratio VARCHAR(8) DEFAULT '16:9'," +
+            "  seed INT DEFAULT -1," +
+            "  first_frame_url TEXT," +
+            "  task_id VARCHAR(128)," +
+            "  status VARCHAR(32) NOT NULL DEFAULT 'PENDING'," +
+            "  video_path VARCHAR(512)," +
+            "  original_video_url TEXT," +
+            "  error_message TEXT," +
+            "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+            "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
+            "  INDEX idx_vgt_user_id (user_id)," +
+            "  INDEX idx_vgt_status (status)" +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }
 
     private void addColumnIfMissing(String table, String column, String alterSql) {

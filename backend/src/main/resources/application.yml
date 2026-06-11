@@ -74,6 +74,20 @@ app:
   websearch:
     api-key: ${WEB_SEARCH_API_KEY:sk-6e67f3ffa84f435d8d117919b25d03b0}
     endpoint: https://api.bochaai.com/v1/web-search
+  # Jimeng AI — video generation
+  jimeng:
+    api:
+      access-key: ${JIMENG_ACCESS_KEY:}
+      secret-key: ${JIMENG_SECRET_KEY:}
+      endpoint: https://visual.volcengineapi.com
+      region: cn-north-1
+      service: cv
+      version: "2022-08-31"
+
+  video:
+    storage:
+      path: ${VIDEO_STORAGE_PATH:./data/videos}
+
   elasticsearch:
     host: ${ES_HOST:localhost}
     port: ${ES_PORT:9201}
