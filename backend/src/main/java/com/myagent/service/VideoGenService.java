@@ -73,7 +73,7 @@ public class VideoGenService {
      * Submit a video generation task to Jimeng API.
      */
     @Transactional
-    public VideoGenTask submitTask(VideoGenRequest request, Long userId) {
+    public VideoGenTask submitTask(VideoGenRequest request, String userId) {
         // Validate
         if (request.getPrompt() == null || request.getPrompt().isBlank()) {
             throw new IllegalArgumentException("提示词不能为空");
@@ -290,7 +290,7 @@ public class VideoGenService {
     /**
      * Get all tasks for a user, ordered by creation time descending.
      */
-    public List<VideoGenTask> getUserTasks(Long userId) {
+    public List<VideoGenTask> getUserTasks(String userId) {
         Map<String, Object> params = new HashMap<>();
         params.put("user_id", userId);
         List<VideoGenTask> tasks = taskMapper.selectByMap(params);

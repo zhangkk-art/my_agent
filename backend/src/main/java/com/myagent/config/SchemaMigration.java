@@ -63,7 +63,7 @@ public class SchemaMigration implements ApplicationRunner {
         jdbcTemplate.execute(
             "CREATE TABLE IF NOT EXISTS video_gen_tasks (" +
             "  id VARCHAR(36) PRIMARY KEY," +
-            "  user_id BIGINT NOT NULL," +
+            "  user_id VARCHAR(36) NOT NULL," +
             "  conversation_id VARCHAR(36)," +
             "  prompt TEXT NOT NULL," +
             "  req_key VARCHAR(64) NOT NULL DEFAULT 'jimeng_ti2v_v30_pro'," +

@@ -23,6 +23,7 @@ import java.util.NoSuchElementException;
 @RequestMapping("/api/video-gen")
 public class VideoGenController {
 
+
     private static final Logger log = LoggerFactory.getLogger(VideoGenController.class);
 
     private final VideoGenService videoGenService;

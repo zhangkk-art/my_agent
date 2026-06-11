@@ -10,7 +10,7 @@ public class VideoGenTask {
 
     @TableId
     private String id;
-    private Long userId;
+    private String userId;
     private String conversationId;
     private String prompt;
     private String reqKey;
@@ -31,8 +31,8 @@ public class VideoGenTask {
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
+    public String getUserId() { return userId; }
+    public void setUserId(String userId) { this.userId = userId; }
 
     public String getConversationId() { return conversationId; }
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
