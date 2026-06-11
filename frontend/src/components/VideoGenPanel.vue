@@ -120,7 +120,7 @@
         <div v-if="showAdvanced" class="advanced-settings">
           <div class="form-row">
             <label class="form-label">时长</label>
-            <div class="btn-group">
+            <div class="duration-input-row">
               <button
                 :class="{ active: duration === 5 }"
                 class="btn-option"
@@ -131,6 +131,19 @@
                 class="btn-option"
                 @click="duration = 10"
               >10秒</button>
+              <div class="duration-custom">
+                <input
+                  type="number"
+                  class="duration-input"
+                  :value="duration"
+                  min="1"
+                  max="60"
+                  step="1"
+                  @input="onDurationInput"
+                  @focus="onDurationFocus"
+                />
+                <span class="duration-unit">秒</span>
+              </div>
             </div>
           </div>
 
@@ -190,6 +203,18 @@ const fileInput = ref(null)
 const ratios = ['16:9', '9:16', '1:1']
 
 let pollTimer = null
+
+function onDurationInput(e) {
+  const val = parseFloat(e.target.value)
+  if (!isNaN(val) && val > 0) {
+    duration.value = Math.min(val, 60)
+  }
+}
+
+function onDurationFocus(e) {
+  // Select all text on focus for easy editing
+  e.target.select()
+}
 
 onMounted(async () => {
   try {
@@ -593,6 +618,49 @@ function removeFirstFrame() {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
+}
+
+.duration-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.duration-custom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-card);
+  padding: 0 6px;
+  transition: border-color 0.15s;
+}
+.duration-custom:focus-within {
+  border-color: var(--accent);
+}
+
+.duration-input {
+  width: 48px;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.duration-input::-webkit-outer-spin-button,
+.duration-input::-webkit-inner-spin-button {
+  opacity: 1;
+}
+
+.duration-unit {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .btn-submit {
