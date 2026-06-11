@@ -217,13 +217,21 @@ function onDurationFocus(e) {
 }
 
 onMounted(async () => {
+  await loadTasks()
+  startPolling()
+})
+
+async function loadTasks() {
   try {
-    tasks.value = await api.getVideoGenTasks()
+    if (props.conversationId) {
+      tasks.value = await api.getConversationVideoTasks(props.conversationId)
+    } else {
+      tasks.value = await api.getVideoGenTasks()
+    }
   } catch (e) {
     console.warn('Failed to load video tasks', e)
   }
-  startPolling()
-})
+}
 
 onUnmounted(() => {
   stopPolling()
