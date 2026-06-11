@@ -59,6 +59,16 @@ public class SchemaMigration implements ApplicationRunner {
         addColumnIfMissing("knowledge_documents", "updated_at",
                 "ALTER TABLE knowledge_documents ADD COLUMN updated_at DATETIME NULL DEFAULT NULL");
 
+        // Migrate old frames column to duration if needed
+        Integer framesCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns " +
+                "WHERE table_schema = DATABASE() AND table_name = 'video_gen_tasks' AND column_name = 'frames'",
+                Integer.class);
+        if (framesCount != null && framesCount > 0) {
+            jdbcTemplate.execute("ALTER TABLE video_gen_tasks CHANGE COLUMN frames duration INT DEFAULT 5");
+            log.info("Schema migration: renamed frames to duration in video_gen_tasks");
+        }
+
         // Video generation tasks table
         jdbcTemplate.execute(
             "CREATE TABLE IF NOT EXISTS video_gen_tasks (" +
