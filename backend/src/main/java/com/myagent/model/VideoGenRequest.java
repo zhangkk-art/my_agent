@@ -7,8 +7,12 @@ public class VideoGenRequest {
     private String aspectRatio = "16:9"; // 16:9, 9:16, 1:1
     private Integer seed = -1;
     private String firstFrameBase64;     // optional first-frame image (base64, no prefix)
+    private String conversationId;       // associate with a conversation
 
     public VideoGenRequest() {}
+
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
 
     public String getPrompt() { return prompt; }
     public void setPrompt(String prompt) { this.prompt = prompt; }

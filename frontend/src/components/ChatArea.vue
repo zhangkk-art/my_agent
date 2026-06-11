@@ -110,10 +110,12 @@
     <WelcomeScreen v-if="!conversation && !videoMode" @send="$emit('send', $event)" @createFromTemplate="$emit('createFromTemplate', $event)" />
     <VideoGenPanel
       v-if="videoMode"
+      :conversationId="conversation?.id"
       @close="$emit('toggleVideoGen')"
       @play="(task) => { playingTask = task; showPlayer = true; }"
       @deleteTask="(id) => $emit('deleteVideoTask', id)"
       @toast="(e) => $emit('toast', e)"
+      @videoSubmitted="(task) => $emit('videoSubmitted', task)"
     />
     <template v-if="conversation && !videoMode">
       <MessageList
@@ -124,6 +126,7 @@
         @regenerate="$emit('regenerate')"
         @editMessage="(id, content) => $emit('editMessage', id, content)"
         @deleteMessage="id => $emit('deleteMessage', id)"
+        @deleteVideoTask="id => $emit('deleteVideoTask', id)"
         @forkMessage="id => $emit('forkMessage', id)"
         @starMessage="id => $emit('starMessage', id)"
         @rateMessage="(id, v) => $emit('rateMessage', id, v)"
@@ -174,7 +177,7 @@ const props = defineProps({
   videoMode: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage', 'createFromTemplate', 'update:model', 'updateSystemPrompt', 'toast', 'updateAiParams', 'toggleVideoGen', 'playVideo', 'deleteVideoTask'])
+const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage', 'createFromTemplate', 'update:model', 'updateSystemPrompt', 'toast', 'updateAiParams', 'toggleVideoGen', 'playVideo', 'deleteVideoTask', 'videoSubmitted'])
 
 const messageListRef = ref(null)
 const open = ref(false)

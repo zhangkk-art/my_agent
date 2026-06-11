@@ -4,7 +4,7 @@
       <div v-for="i in 4" :key="'s'+i" class="skeleton-row" :class="i % 2 === 0 ? 'right' : 'left'">
         <div class="skeleton-bubble">
           <div class="skeleton-line skeleton-role"></div>
-          <div class="skeleton-line skeleton-text" :style="{ width: (40 + Math.random() * 40) + '%' }"></div>
+          <div class="skeleton-line skeleton-text" :style="{ width: skeletonWidth(i) + '%' }"></div>
           <div class="skeleton-line skeleton-text" :style="{ width: (20 + Math.random() * 50) + '%' }"></div>
           <div class="skeleton-line skeleton-text-short" :style="{ width: (30 + Math.random() * 30) + '%' }"></div>
         </div>
@@ -21,6 +21,7 @@
         @regenerate="$emit('regenerate')"
         @editMessage="(id, content) => $emit('editMessage', id, content)"
         @deleteMessage="id => $emit('deleteMessage', id)"
+        @deleteVideoTask="id => $emit('deleteVideoTask', id)"
         @forkMessage="id => $emit('forkMessage', id)"
         @starMessage="id => $emit('starMessage', id)"
         @rateMessage="(id, v) => $emit('rateMessage', id, v)"
@@ -60,7 +61,7 @@ const props = defineProps({
   conversationLoading: Boolean
 })
 
-defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage'])
+defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage', 'deleteVideoTask'])
 
 const listRef = ref(null)
 const showScrollBtn = ref(false)
@@ -71,6 +72,9 @@ function isNearBottom() {
   if (!el) return true
   return el.scrollHeight - el.scrollTop - el.clientHeight < 80
 }
+
+const skeletonWidths = [55, 72, 63, 48]
+function skeletonWidth(i) { return skeletonWidths[i % 4] }
 
 function scrollToBottom() {
   const el = listRef.value

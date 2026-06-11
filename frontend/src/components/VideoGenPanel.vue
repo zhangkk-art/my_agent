@@ -171,7 +171,11 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import * as api from '../api/index.js'
 
-const emit = defineEmits(['close', 'play', 'toast'])
+const props = defineProps({
+  conversationId: { type: String, default: null }
+})
+
+const emit = defineEmits(['close', 'play', 'toast', 'videoSubmitted'])
 
 const prompt = ref('')
 const duration = ref(5)
@@ -251,19 +255,22 @@ async function submitTask() {
       duration: duration.value,
       aspectRatio: aspectRatio.value,
       seed: -1,
-      firstFrameBase64: firstFrameBase64.value
+      firstFrameBase64: firstFrameBase64.value,
+      conversationId: props.conversationId
     })
-    tasks.value.unshift({
+    const fullTask = {
       ...task,
       prompt: prompt.value,
       duration: duration.value,
       aspectRatio: aspectRatio.value,
       status: task.status || 'SUBMITTED',
       createdAt: task.createdAt || new Date().toISOString()
-    })
+    }
+    tasks.value.unshift(fullTask)
     prompt.value = ''
     firstFramePreview.value = null
     firstFrameBase64.value = null
+    emit('videoSubmitted', fullTask)
     emit('toast', { message: '视频任务已提交', type: 'success' })
   } catch (e) {
     emit('toast', { message: '提交失败: ' + e.message, type: 'error' })

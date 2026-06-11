@@ -69,6 +69,21 @@ public class VideoGenController {
     }
 
     /**
+     * Get video tasks for a specific conversation.
+     */
+    @GetMapping("/conversations/{conversationId}/tasks")
+    public ResponseEntity<List<VideoGenTask>> getConversationTasks(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String conversationId) {
+        List<VideoGenTask> tasks = videoGenService.getConversationTasks(conversationId);
+        // Filter to only return tasks owned by the current user
+        tasks = tasks.stream()
+                .filter(t -> t.getUserId().equals(principal.getUserId()))
+                .toList();
+        return ResponseEntity.ok(tasks);
+    }
+
+    /**
      * Get a single task (also polls Jimeng for status update).
      */
     @GetMapping("/tasks/{id}")

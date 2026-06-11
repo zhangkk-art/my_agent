@@ -79,6 +79,7 @@ public class VideoGenService {
         task.setUserId(userId);
         task.setPrompt(request.getPrompt());
         task.setReqKey(model);
+        task.setConversationId(request.getConversationId());
         task.setDuration(request.getDuration() != null ? request.getDuration() : 5);
         task.setAspectRatio(request.getAspectRatio() != null ? request.getAspectRatio() : "16:9");
         task.setSeed(request.getSeed() != null ? request.getSeed() : -1);
@@ -278,6 +279,14 @@ public class VideoGenService {
         params.put("user_id", userId);
         List<VideoGenTask> tasks = taskMapper.selectByMap(params);
         tasks.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+        return tasks;
+    }
+
+    public List<VideoGenTask> getConversationTasks(String conversationId) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("conversation_id", conversationId);
+        List<VideoGenTask> tasks = taskMapper.selectByMap(params);
+        tasks.sort((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()));
         return tasks;
     }
 

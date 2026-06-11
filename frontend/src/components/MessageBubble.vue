@@ -1,5 +1,75 @@
 <template>
-  <div class="message-row" :class="message.role" :id="'msg-' + message.id">
+  <!-- Video message: inline video generation task -->
+  <div v-if="message.role === 'video'" class="message-row video-msg" :id="'msg-' + message.id">
+    <div class="message-bubble video-bubble">
+      <div class="message-header">
+        <span class="message-role">🎬 视频生成</span>
+        <span class="message-time" v-if="message.createdAt" :title="message.createdAt">{{ timeAgo(message.createdAt) }}</span>
+        <div v-if="hovered" class="message-actions">
+          <button class="btn-action" title="删除" @click="confirmingDelete = true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+          </button>
+          <template v-if="confirmingDelete">
+            <span class="delete-confirm-label">删除?</span>
+            <button class="btn-action btn-confirm-yes" title="确认删除" @click="doDelete">✓</button>
+            <button class="btn-action" title="取消" @click="confirmingDelete = false">✕</button>
+          </template>
+        </div>
+      </div>
+      <div class="video-msg-content">
+        <div class="video-msg-prompt">{{ message.content }}</div>
+        <div class="video-msg-status-row">
+          <!-- Pending/Processing: spinner -->
+          <div v-if="isVideoPending" class="video-status-pending">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+              <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+            </svg>
+            <span>{{ videoStatusLabel }}</span>
+          </div>
+          <!-- Succeeded: video player -->
+          <div v-else-if="message.videoTask.status === 'SUCCEEDED'" class="video-player-inline">
+            <div v-if="videoLoading" class="video-loading-inline">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+              加载视频...
+            </div>
+            <div v-else-if="videoError" class="video-error-inline">
+              <span>视频加载失败</span>
+              <button class="btn-retry" @click="loadInlineVideo">重试</button>
+            </div>
+            <video
+              v-else-if="inlineVideoUrl"
+              :src="inlineVideoUrl"
+              controls
+              class="video-player-el"
+              @error="videoError = true"
+            >
+              您的浏览器不支持视频播放
+            </video>
+            <button v-else class="btn-load-video" @click="loadInlineVideo">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <polygon points="8 5 19 12 8 19 8 5"/>
+              </svg>
+              加载视频
+            </button>
+          </div>
+          <!-- Failed -->
+          <div v-else-if="message.videoTask.status === 'FAILED'" class="video-status-failed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+            <span>生成失败{{ message.videoTask.errorMessage ? ': ' + message.videoTask.errorMessage : '' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Normal chat messages -->
+  <div v-else class="message-row" :class="message.role" :id="'msg-' + message.id">
     <div class="message-bubble" @mouseenter="hovered = true" @mouseleave="hovered = false">
       <div class="message-header">
         <span class="message-role">
@@ -297,7 +367,50 @@ const props = defineProps({
   loading: Boolean
 })
 
-const emit = defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage'])
+const emit = defineEmits(['regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage', 'deleteVideoTask'])
+
+// ── Video message support ──
+const inlineVideoUrl = ref('')
+const videoLoading = ref(false)
+const videoError = ref(false)
+
+const isVideoPending = computed(() => {
+  if (!props.message.videoTask) return false
+  const s = props.message.videoTask.status
+  return s === 'PENDING' || s === 'SUBMITTED' || s === 'PROCESSING'
+})
+
+const videoStatusLabel = computed(() => {
+  const map = {
+    PENDING: '等待中...',
+    SUBMITTED: '已提交，排队中...',
+    PROCESSING: 'AI生成中...',
+    SUCCEEDED: '已完成',
+    FAILED: '失败'
+  }
+  return map[props.message.videoTask?.status] || props.message.videoTask?.status || '等待中'
+})
+
+async function loadInlineVideo() {
+  const taskId = props.message.videoTask?.id
+  if (!taskId) return
+  videoLoading.value = true
+  videoError.value = false
+  try {
+    const token = localStorage.getItem('token')
+    const res = await fetch(`/api/video-gen/tasks/${taskId}/video`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!res.ok) throw new Error('Failed to load video')
+    const blob = await res.blob()
+    inlineVideoUrl.value = URL.createObjectURL(blob)
+  } catch (e) {
+    videoError.value = true
+    console.error('Failed to load inline video:', e)
+  } finally {
+    videoLoading.value = false
+  }
+}
 
 const hovered = ref(false)
 const copied = ref(false)
@@ -420,7 +533,11 @@ function cancelEdit() {
 
 function doDelete() {
   confirmingDelete.value = false
-  emit('deleteMessage', props.message.id)
+  if (props.message.role === 'video') {
+    emit('deleteVideoTask', props.message.videoTask?.id)
+  } else {
+    emit('deleteMessage', props.message.id)
+  }
 }
 </script>
 
@@ -780,5 +897,112 @@ function doDelete() {
   .message-actions {
     opacity: 1;
   }
+}
+
+/* ── Video message styles ── */
+.message-row.video-msg {
+  justify-content: flex-start;
+}
+
+.video-bubble {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-bottom-left-radius: 4px;
+  min-width: 280px;
+  max-width: 75%;
+}
+
+.video-msg-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.video-msg-prompt {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.video-msg-status-row {
+  display: flex;
+  align-items: center;
+}
+
+.video-status-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+}
+
+.video-status-failed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--danger);
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-radius: 8px;
+}
+
+.video-player-inline {
+  width: 100%;
+}
+
+.video-player-el {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 8px;
+  outline: none;
+  background: #000;
+}
+
+.video-loading-inline, .video-error-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 16px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+}
+
+.video-error-inline {
+  color: var(--danger);
+}
+
+.btn-load-video {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--success);
+  color: white;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.btn-load-video:hover {
+  opacity: 0.85;
+}
+
+.btn-retry {
+  padding: 4px 10px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.btn-retry:hover {
+  background: var(--border-color);
 }
 </style>

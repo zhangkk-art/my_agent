@@ -51,6 +51,7 @@
       @update:model="onModelChange"
       @toggleVideoGen="toggleVideoGen"
       @deleteVideoTask="handleDeleteVideoTask"
+      @videoSubmitted="handleVideoSubmitted"
       @toast="(e) => toastRef?.show(e.message, e.type)"
     >
       <template #hamburger>
@@ -157,9 +158,136 @@ const videoMode = ref(false)
 function toggleVideoGen() {
   videoMode.value = !videoMode.value
 }
+
+// ── Video task integration ──
+const videoTasksByConv = ref({})  // { conversationId: [VideoGenTask] }
+let videoPollTimer = null
+
+function videoTaskToMessage(task) {
+  return {
+    id: 'video-' + task.id,
+    _localKey: 'video-' + task.id,
+    conversationId: task.conversationId,
+    role: 'video',
+    content: task.prompt,
+    videoTask: task,
+    createdAt: task.createdAt
+  }
+}
+
+function mergeVideoTasks(conv) {
+  if (!conv) return
+  const tasks = videoTasksByConv.value[conv.id] || []
+  // Remove old synthetic video messages before re-merging
+  const chatMsgs = (conv.messages || []).filter(m => m.role !== 'video')
+  const videoMsgs = tasks.map(t => videoTaskToMessage(t))
+  // Merge and sort by createdAt
+  const all = [...chatMsgs, ...videoMsgs]
+  all.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+  conv.messages = all
+}
+
+async function fetchConversationVideoTasks(conversationId) {
+  try {
+    const tasks = await api.getConversationVideoTasks(conversationId)
+    videoTasksByConv.value[conversationId] = tasks
+    // Merge into current conversation if active
+    const conv = conversations.value.find(c => c.id === conversationId)
+    if (conv) {
+      mergeVideoTasks(conv)
+    }
+  } catch (e) {
+    console.warn('Failed to fetch video tasks for conversation', conversationId, e)
+  }
+}
+
+function startVideoPolling() {
+  stopVideoPolling()
+  videoPollTimer = setInterval(async () => {
+    const convId = activeConversationId.value
+    if (!convId) return
+    const tasks = videoTasksByConv.value[convId] || []
+    const pending = tasks.filter(t => t.status === 'PENDING' || t.status === 'SUBMITTED' || t.status === 'PROCESSING')
+    if (pending.length === 0) return
+
+    let changed = false
+    for (const task of pending) {
+      try {
+        const updated = await api.getVideoGenTask(task.id)
+        const idx = tasks.findIndex(t => t.id === task.id)
+        if (idx >= 0) {
+          tasks.splice(idx, 1, updated)
+          changed = true
+        }
+      } catch (e) {
+        console.warn('Video poll failed for task', task.id, e)
+      }
+    }
+    if (changed) {
+      videoTasksByConv.value[convId] = [...tasks]
+      // Re-merge into current conversation
+      const conv = conversations.value.find(c => c.id === convId)
+      if (conv) {
+        mergeVideoTasks(conv)
+      }
+    }
+  }, 5000)
+}
+
+function stopVideoPolling() {
+  if (videoPollTimer) {
+    clearInterval(videoPollTimer)
+    videoPollTimer = null
+  }
+}
+
+async function handleVideoSubmitted(task) {
+  // Close video mode and return to chat
+  videoMode.value = false
+
+  // Create conversation if needed
+  if (!activeConversationId.value) {
+    const title = (task.prompt || '视频生成').substring(0, 20)
+    try {
+      const conv = await api.createConversation(title)
+      conversations.value.unshift(conv)
+      activeConversationId.value = conv.id
+      // Update the task's conversationId
+      task.conversationId = conv.id
+      // Store video task for this conversation
+      videoTasksByConv.value[conv.id] = [task]
+      mergeVideoTasks(conv)
+      startVideoPolling()
+    } catch (e) {
+      toastRef.value?.show('创建会话失败', 'error')
+    }
+  } else {
+    // Add to existing conversation's video tasks
+    const convId = activeConversationId.value
+    task.conversationId = convId
+    const existing = videoTasksByConv.value[convId] || []
+    videoTasksByConv.value[convId] = [task, ...existing]
+    // Merge into current conversation
+    const conv = conversations.value.find(c => c.id === convId)
+    if (conv) {
+      mergeVideoTasks(conv)
+    }
+    startVideoPolling()
+  }
+}
+
 async function handleDeleteVideoTask(taskId) {
   try {
     await api.deleteVideoGenTask(taskId)
+    // Remove from tracking
+    for (const convId of Object.keys(videoTasksByConv.value)) {
+      videoTasksByConv.value[convId] = videoTasksByConv.value[convId].filter(t => t.id !== taskId)
+    }
+    // Re-merge current conversation
+    const conv = conversations.value.find(c => c.id === activeConversationId.value)
+    if (conv) {
+      mergeVideoTasks(conv)
+    }
     toastRef.value?.show('视频任务已删除', 'success')
   } catch (e) {
     toastRef.value?.show('删除失败', 'error')
@@ -298,6 +426,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopVideoPolling()
   window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('auth:logout', handleLogout)
 })
@@ -329,6 +458,10 @@ async function selectConversation(id) {
     if (newIdx >= 0) {
       conversations.value.splice(newIdx, 1, updated)
     }
+    // Fetch video tasks for this conversation and merge
+    stopVideoPolling()
+    await fetchConversationVideoTasks(id)
+    startVideoPolling()
   } catch (e) {
     if (e.name !== 'AbortError') toastRef.value?.show('加载会话失败', 'error')
   } finally {
@@ -341,6 +474,7 @@ async function selectConversation(id) {
 }
 
 function newConversation() {
+  stopVideoPolling()
   activeConversationId.value = null
   nextTick(() => chatAreaRef.value?.focusInput())
 }
