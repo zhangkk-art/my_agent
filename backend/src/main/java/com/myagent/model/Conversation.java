@@ -23,6 +23,9 @@ public class Conversation {
     @TableField(exist = false)
     private List<Message> messages = new ArrayList<>();
 
+    @TableField(exist = false)
+    private List<VideoGenTask> videoTasks = new ArrayList<>();
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -47,6 +50,8 @@ public class Conversation {
     public void setShareToken(String shareToken) { this.shareToken = shareToken; }
     public List<Message> getMessages() { return messages; }
     public void setMessages(List<Message> messages) { this.messages = messages; }
+    public List<VideoGenTask> getVideoTasks() { return videoTasks; }
+    public void setVideoTasks(List<VideoGenTask> videoTasks) { this.videoTasks = videoTasks; }
     public Boolean getPinned() { return pinned; }
     public void setPinned(Boolean pinned) { this.pinned = pinned; }
     public String getFolderName() { return folderName; }

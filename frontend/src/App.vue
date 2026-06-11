@@ -458,10 +458,15 @@ async function selectConversation(id) {
     const newIdx = conversations.value.findIndex(c => c.id === id)
     if (newIdx >= 0) {
       conversations.value.splice(newIdx, 1, updated)
+      // Populate video tasks from the conversation response (same API call)
+      if (updated.videoTasks && updated.videoTasks.length > 0) {
+        videoTasksByConv.value[id] = updated.videoTasks
+        mergeVideoTasks(updated)
+      }
     }
-    // Fetch video tasks for this conversation and merge
+    // Fallback: also try dedicated endpoint for tasks without conversation_id
     stopVideoPolling()
-    await fetchConversationVideoTasks(id)
+    fetchConversationVideoTasks(id).catch(() => {})
     startVideoPolling()
   } catch (e) {
     if (e.name !== 'AbortError') toastRef.value?.show('加载会话失败', 'error')

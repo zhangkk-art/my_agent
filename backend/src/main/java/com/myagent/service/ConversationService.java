@@ -25,13 +25,16 @@ public class ConversationService {
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final CacheManager cacheManager;
+    private final VideoGenService videoGenService;
 
     public ConversationService(ConversationMapper conversationMapper,
                                MessageMapper messageMapper,
-                               CacheManager cacheManager) {
+                               CacheManager cacheManager,
+                               VideoGenService videoGenService) {
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
         this.cacheManager = cacheManager;
+        this.videoGenService = videoGenService;
     }
 
     public List<Conversation> getAllConversations(String userId) {
@@ -87,7 +90,7 @@ public class ConversationService {
         return conversation;
     }
 
-    public Conversation getConversation(String id) {
+    Conversation getConversation(String id) {
         Conversation conversation = conversationMapper.selectById(id);
         if (conversation == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found: " + id);
@@ -109,6 +112,12 @@ public class ConversationService {
                         .orderByAsc(Message::getCreatedAt)
                         .last(safeLimit(MAX_MESSAGES)));
         conv.setMessages(messages);
+        // Attach video generation tasks for this conversation
+        try {
+            conv.setVideoTasks(videoGenService.getConversationTasks(id));
+        } catch (Exception e) {
+            conv.setVideoTasks(List.of());
+        }
         return conv;
     }
 
@@ -176,7 +185,7 @@ public class ConversationService {
                     ? userMessage.substring(0, 10) : userMessage;
             conv = createConversation(title != null ? title : "New Chat", userId);
         } else {
-            conv = getConversation(conversationId);
+            conv = getConversation(conversationId, userId);
         }
 
         Message userMsg = new Message(
@@ -215,8 +224,8 @@ public class ConversationService {
     }
 
     @Transactional
-    public Conversation prepareForRegenerate(String conversationId, String userMessage) {
-        Conversation conv = getConversation(conversationId);
+    public Conversation prepareForRegenerate(String conversationId, String userMessage, String userId) {
+        Conversation conv = getConversation(conversationId, userId);
         List<Message> messages = conv.getMessages();
 
         if (messages == null || messages.isEmpty()) {
