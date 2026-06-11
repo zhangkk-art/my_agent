@@ -242,8 +242,8 @@ export async function updateSystemPrompt(id, systemPrompt) {
   return res.json();
 }
 
-export async function searchMessages(q) {
-  const res = await apiFetch(`${BASE_URL}/messages/search?q=${encodeURIComponent(q)}`);
+export async function searchMessages(q, signal) {
+  const res = await apiFetch(`${BASE_URL}/messages/search?q=${encodeURIComponent(q)}`, { signal });
   if (!res.ok) throw new Error('Search failed');
   return res.json();
 }
@@ -423,4 +423,41 @@ export async function deleteKnowledgeDocument(id) {
 export function ragChatStream(conversationId, message, model, onChunk, onDone, onError, signal) {
   streamSse(`${BASE_URL}/knowledge/chat`, { conversationId, message, model },
     () => {}, onChunk, onDone, onError, signal);
+}
+
+// ── Video Generation ──
+
+export async function submitVideoGen({ prompt, frames, aspectRatio, seed, firstFrameBase64 }) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, frames, aspectRatio, seed, firstFrameBase64 })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to submit video generation task');
+  }
+  return res.json();
+}
+
+export async function getVideoGenTasks() {
+  const res = await apiFetch(`${BASE_URL}/video-gen/tasks`);
+  if (!res.ok) throw new Error('Failed to fetch video tasks');
+  return res.json();
+}
+
+export async function getVideoGenTask(id) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/tasks/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch video task');
+  return res.json();
+}
+
+export async function deleteVideoGenTask(id) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/tasks/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete video task');
+}
+
+export function getVideoUrl(taskId) {
+  const token = getToken();
+  return `${BASE_URL}/video-gen/tasks/${taskId}/video${token ? '?token=' + token : ''}`;
 }

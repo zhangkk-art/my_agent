@@ -91,6 +91,19 @@
           <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
         </svg>
       </button>
+      <!-- Video generation toggle -->
+      <button
+        class="btn-video-gen"
+        :class="{ active: videoMode }"
+        title="视频生成"
+        @click="$emit('toggleVideoGen')"
+        type="button"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="23 7 16 12 23 17 23 7"/>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+      </button>
       <button
         v-if="loading"
         class="btn-stop"
@@ -124,10 +137,11 @@ const props = defineProps({
   disabled: Boolean,
   loading: Boolean,
   enterToSend: { type: Boolean, default: true },
-  voiceLang: { type: String, default: 'zh-CN' }
+  voiceLang: { type: String, default: 'zh-CN' },
+  videoMode: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['send', 'stop'])
+const emit = defineEmits(['send', 'stop', 'toggleVideoGen'])
 
 const text = ref('')
 const inputRef = ref(null)
@@ -503,6 +517,21 @@ defineExpose({ focus: () => inputRef.value?.focus() })
 }
 .btn-web-search:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-web-search.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+.btn-video-gen {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 7px;
+  transition: all 0.15s;
+}
+.btn-video-gen:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-video-gen.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }

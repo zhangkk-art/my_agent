@@ -36,6 +36,7 @@
       :model="selectedModel"
       :enterToSend="settings.enterToSend"
       :voiceLang="settings.voiceLang"
+      :videoMode="videoMode"
       @send="handleSendMessage"
       @stop="stopStream"
       @regenerate="regenerateMessage"
@@ -48,6 +49,8 @@
       @createFromTemplate="handleCreateFromTemplate"
       @updateSystemPrompt="handleUpdateSystemPrompt"
       @update:model="onModelChange"
+      @toggleVideoGen="toggleVideoGen"
+      @deleteVideoTask="handleDeleteVideoTask"
       @toast="(e) => toastRef?.show(e.message, e.type)"
     >
       <template #hamburger>
@@ -150,6 +153,18 @@ const settings = ref(loadSettings())
 // Track the last webSearch state so regenerate can reuse it
 const lastWebSearch = ref(false)
 const continuingMessageId = ref(null)  // messageId being continued, null when not in continuation mode
+const videoMode = ref(false)
+function toggleVideoGen() {
+  videoMode.value = !videoMode.value
+}
+async function handleDeleteVideoTask(taskId) {
+  try {
+    await api.deleteVideoGenTask(taskId)
+    toastRef.value?.show('视频任务已删除', 'success')
+  } catch (e) {
+    toastRef.value?.show('删除失败', 'error')
+  }
+}
 
 // ── Resizable sidebar ──
 const SIDEBAR_MIN = 240

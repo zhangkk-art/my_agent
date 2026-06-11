@@ -107,8 +107,15 @@
       </div>
     </div>
 
-    <WelcomeScreen v-if="!conversation" @send="$emit('send', $event)" @createFromTemplate="$emit('createFromTemplate', $event)" />
-    <template v-if="conversation">
+    <WelcomeScreen v-if="!conversation && !videoMode" @send="$emit('send', $event)" @createFromTemplate="$emit('createFromTemplate', $event)" />
+    <VideoGenPanel
+      v-if="videoMode"
+      @close="$emit('toggleVideoGen')"
+      @play="(task) => { playingTask = task; showPlayer = true; }"
+      @deleteTask="(id) => $emit('deleteVideoTask', id)"
+      @toast="(e) => $emit('toast', e)"
+    />
+    <template v-if="conversation && !videoMode">
       <MessageList
         ref="messageListRef"
         :messages="conversation.messages || []"
@@ -128,10 +135,17 @@
         :loading="loading"
         :enterToSend="enterToSend"
         :voiceLang="voiceLang"
+        :videoMode="videoMode"
         @send="(msg, imgs, ws) => $emit('send', msg, imgs, ws)"
         @stop="$emit('stop')"
+        @toggleVideoGen="$emit('toggleVideoGen')"
       />
     </template>
+    <VideoPlayerModal
+      :visible="showPlayer"
+      :task="playingTask"
+      @close="showPlayer = false"
+    />
   </main>
 </template>
 
@@ -140,6 +154,8 @@ import { ref, computed, watch } from 'vue'
 import WelcomeScreen from './WelcomeScreen.vue'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
+import VideoGenPanel from './VideoGenPanel.vue'
+import VideoPlayerModal from './VideoPlayerModal.vue'
 import * as api from '../api/index.js'
 
 const chatInputRef = ref(null)
@@ -154,14 +170,17 @@ const props = defineProps({
   conversationLoading: Boolean,
   model: String,
   enterToSend: { type: Boolean, default: true },
-  voiceLang: { type: String, default: 'zh-CN' }
+  voiceLang: { type: String, default: 'zh-CN' },
+  videoMode: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage', 'createFromTemplate', 'update:model', 'updateSystemPrompt', 'toast', 'updateAiParams'])
+const emit = defineEmits(['send', 'stop', 'regenerate', 'editMessage', 'deleteMessage', 'forkMessage', 'starMessage', 'rateMessage', 'continueMessage', 'createFromTemplate', 'update:model', 'updateSystemPrompt', 'toast', 'updateAiParams', 'toggleVideoGen', 'playVideo', 'deleteVideoTask'])
 
 const messageListRef = ref(null)
 const open = ref(false)
 const moreOpen = ref(false)
+const showPlayer = ref(false)
+const playingTask = ref(null)
 defineExpose({
   focusInput,
   scrollToMessage: (id) => messageListRef.value?.scrollToMessage(id)
