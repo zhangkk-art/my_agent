@@ -3,18 +3,18 @@ package com.myagent.model;
 public class VideoGenRequest {
 
     private String prompt;
-    private Integer frames = 121;
-    private String aspectRatio = "16:9";
+    private Integer duration = 5;        // video duration in seconds (5 or 10)
+    private String aspectRatio = "16:9"; // 16:9, 9:16, 1:1
     private Integer seed = -1;
-    private String firstFrameBase64;
+    private String firstFrameBase64;     // optional first-frame image (base64, no prefix)
 
     public VideoGenRequest() {}
 
     public String getPrompt() { return prompt; }
     public void setPrompt(String prompt) { this.prompt = prompt; }
 
-    public Integer getFrames() { return frames; }
-    public void setFrames(Integer frames) { this.frames = frames; }
+    public Integer getDuration() { return duration; }
+    public void setDuration(Integer duration) { this.duration = duration; }
 
     public String getAspectRatio() { return aspectRatio; }
     public void setAspectRatio(String aspectRatio) { this.aspectRatio = aspectRatio; }

@@ -427,11 +427,11 @@ export function ragChatStream(conversationId, message, model, onChunk, onDone, o
 
 // ── Video Generation ──
 
-export async function submitVideoGen({ prompt, frames, aspectRatio, seed, firstFrameBase64 }) {
+export async function submitVideoGen({ prompt, duration, aspectRatio, seed, firstFrameBase64 }) {
   const res = await apiFetch(`${BASE_URL}/video-gen/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, frames, aspectRatio, seed, firstFrameBase64 })
+    body: JSON.stringify({ prompt, duration, aspectRatio, seed, firstFrameBase64 })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

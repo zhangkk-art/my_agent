@@ -67,7 +67,7 @@ public class SchemaMigration implements ApplicationRunner {
             "  conversation_id VARCHAR(36)," +
             "  prompt TEXT NOT NULL," +
             "  req_key VARCHAR(64) NOT NULL DEFAULT 'jimeng_ti2v_v30_pro'," +
-            "  frames INT DEFAULT 121," +
+            "  duration INT DEFAULT 5," +
             "  aspect_ratio VARCHAR(8) DEFAULT '16:9'," +
             "  seed INT DEFAULT -1," +
             "  first_frame_url TEXT," +

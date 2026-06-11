@@ -74,15 +74,11 @@ app:
   websearch:
     api-key: ${WEB_SEARCH_API_KEY:sk-6e67f3ffa84f435d8d117919b25d03b0}
     endpoint: https://api.bochaai.com/v1/web-search
-  # Jimeng AI — video generation
-  jimeng:
-    api:
-      access-key: ${JIMENG_ACCESS_KEY:}
-      secret-key: ${JIMENG_SECRET_KEY:}
-      endpoint: https://visual.volcengineapi.com
-      region: cn-north-1
-      service: cv
-      version: "2022-08-31"
+  # Ark API — video generation (即梦AI / Seedance)
+  ark:
+    api-key: ${ARK_API_KEY:}
+    endpoint: https://ark.cn-beijing.volces.com/api/v3
+    model: ${ARK_VIDEO_MODEL:doubao-seedance-1-0-pro-250528}
 
   video:
     storage:

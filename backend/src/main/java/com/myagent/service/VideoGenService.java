@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myagent.mapper.VideoGenTaskMapper;
 import com.myagent.model.VideoGenRequest;
 import com.myagent.model.VideoGenTask;
-import com.myagent.util.IamV4Signer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,28 +31,25 @@ public class VideoGenService {
     private final VideoGenTaskMapper taskMapper;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
-    private final IamV4Signer signer;
+    private final String apiKey;
     private final String endpoint;
-    private final String version;
+    private final String model;
     private final Path storagePath;
 
     public VideoGenService(
             VideoGenTaskMapper taskMapper,
-            @Value("${app.jimeng.api.access-key:}") String accessKey,
-            @Value("${app.jimeng.api.secret-key:}") String secretKey,
-            @Value("${app.jimeng.api.endpoint:https://visual.volcengineapi.com}") String endpoint,
-            @Value("${app.jimeng.api.region:cn-north-1}") String region,
-            @Value("${app.jimeng.api.service:cv}") String service,
-            @Value("${app.jimeng.api.version:2022-08-31}") String version,
+            @Value("${app.ark.api-key:}") String apiKey,
+            @Value("${app.ark.endpoint:https://ark.cn-beijing.volces.com/api/v3}") String endpoint,
+            @Value("${app.ark.model:doubao-seedance-1-0-pro-250528}") String model,
             @Value("${app.video.storage.path:./data/videos}") String storagePath) {
         this.taskMapper = taskMapper;
         this.objectMapper = new ObjectMapper();
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
-        this.signer = new IamV4Signer(accessKey, secretKey, region, service);
+        this.apiKey = apiKey;
         this.endpoint = endpoint;
-        this.version = version;
+        this.model = model;
         this.storagePath = Paths.get(storagePath);
         try {
             Files.createDirectories(this.storagePath);
@@ -62,19 +58,15 @@ public class VideoGenService {
         }
     }
 
-    /**
-     * Check if API key is configured.
-     */
     public boolean isConfigured() {
-        return signer != null;
+        return apiKey != null && !apiKey.isBlank();
     }
 
     /**
-     * Submit a video generation task to Jimeng API.
+     * Submit a video generation task via Ark API.
      */
     @Transactional
     public VideoGenTask submitTask(VideoGenRequest request, String userId) {
-        // Validate
         if (request.getPrompt() == null || request.getPrompt().isBlank()) {
             throw new IllegalArgumentException("提示词不能为空");
         }
@@ -83,73 +75,79 @@ public class VideoGenService {
         task.setId(UUID.randomUUID().toString());
         task.setUserId(userId);
         task.setPrompt(request.getPrompt());
-        task.setReqKey("jimeng_ti2v_v30_pro");
-        task.setFrames(request.getFrames() != null ? request.getFrames() : 121);
+        task.setReqKey(model);
+        task.setDuration(request.getDuration() != null ? request.getDuration() : 5);
         task.setAspectRatio(request.getAspectRatio() != null ? request.getAspectRatio() : "16:9");
         task.setSeed(request.getSeed() != null ? request.getSeed() : -1);
         task.setStatus("PENDING");
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
-
         taskMapper.insert(task);
 
         try {
-            // Build Jimeng API request body
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("req_key", task.getReqKey());
-            body.put("prompt", task.getPrompt());
-            body.put("frames", task.getFrames());
-            body.put("aspect_ratio", task.getAspectRatio());
-            body.put("seed", task.getSeed());
-            body.put("return_url", true);
+            // Build Ark API request body
+            List<Map<String, Object>> content = new ArrayList<>();
 
-            // If first frame image provided, add binary_data_base64
+            // If first frame image provided, add it first
             if (request.getFirstFrameBase64() != null && !request.getFirstFrameBase64().isBlank()) {
-                body.put("binary_data_base64", List.of(request.getFirstFrameBase64()));
+                Map<String, Object> imagePart = new LinkedHashMap<>();
+                imagePart.put("type", "image_url");
+                Map<String, String> imageUrl = new LinkedHashMap<>();
+                imageUrl.put("url", "data:image/png;base64," + request.getFirstFrameBase64());
+                imagePart.put("image_url", imageUrl);
+                content.add(imagePart);
+            }
+
+            Map<String, Object> textPart = new LinkedHashMap<>();
+            textPart.put("type", "text");
+            textPart.put("text", request.getPrompt());
+            content.add(textPart);
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("content", content);
+            body.put("duration", task.getDuration());
+            body.put("ratio", task.getAspectRatio());
+            if (task.getSeed() != -1) {
+                body.put("seed", task.getSeed());
             }
 
             String payload = objectMapper.writeValueAsString(body);
-            String query = "Action=CVSync2AsyncSubmitTask&Version=" + version;
-            String host = URI.create(endpoint).getHost();
-            String path = "/";
-
-            String xDate = IamV4Signer.generateXDate();
-            String authorization = signer.sign("POST", path, query, payload, host, xDate);
 
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint + "?" + query))
+                    .uri(URI.create(endpoint + "/contents/generations/tasks"))
                     .header("Content-Type", "application/json")
-                    .header("X-Date", xDate)
-                    .header("Authorization", authorization)
+                    .header("Authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(payload))
                     .timeout(Duration.ofSeconds(30))
                     .build();
 
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
+            log.info("Ark submit response: HTTP {} body={}", response.statusCode(), response.body());
+
             if (response.statusCode() == 200) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) result.get("data");
-                if (data != null && data.get("task_id") != null) {
-                    task.setTaskId(data.get("task_id").toString());
+                Object arkTaskId = result.get("id");
+                if (arkTaskId != null) {
+                    task.setTaskId(arkTaskId.toString());
                     task.setStatus("SUBMITTED");
-                    log.info("Jimeng task submitted: taskId={}, jimengTaskId={}", task.getId(), task.getTaskId());
+                    log.info("Ark task submitted: localId={}, arkTaskId={}", task.getId(), task.getTaskId());
                 } else {
                     task.setStatus("FAILED");
-                    task.setErrorMessage("即梦API返回异常: " + response.body());
-                    log.error("Jimeng submit failed: {}", response.body());
+                    task.setErrorMessage("Ark API返回异常: " + response.body());
+                    log.error("Ark submit failed: no id in response: {}", response.body());
                 }
             } else {
                 task.setStatus("FAILED");
-                task.setErrorMessage("即梦API返回HTTP " + response.statusCode() + ": " + response.body());
-                log.error("Jimeng submit failed with HTTP {}: {}", response.statusCode(), response.body());
+                task.setErrorMessage("Ark API返回HTTP " + response.statusCode() + ": " + response.body());
+                log.error("Ark submit failed with HTTP {}: {}", response.statusCode(), response.body());
             }
         } catch (Exception e) {
             task.setStatus("FAILED");
             task.setErrorMessage("提交失败: " + e.getMessage());
-            log.error("Failed to submit Jimeng task", e);
+            log.error("Failed to submit Ark task", e);
         }
 
         task.setUpdatedAt(LocalDateTime.now());
@@ -158,7 +156,7 @@ public class VideoGenService {
     }
 
     /**
-     * Poll task status from Jimeng API and update DB.
+     * Poll task status from Ark API and update DB.
      */
     @Transactional
     public VideoGenTask pollTask(String taskId) {
@@ -177,24 +175,10 @@ public class VideoGenService {
         }
 
         try {
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("req_key", task.getReqKey());
-            body.put("task_id", task.getTaskId());
-
-            String payload = objectMapper.writeValueAsString(body);
-            String query = "Action=CVSync2AsyncGetResult&Version=" + version;
-            String host = URI.create(endpoint).getHost();
-            String path = "/";
-
-            String xDate = IamV4Signer.generateXDate();
-            String authorization = signer.sign("POST", path, query, payload, host, xDate);
-
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint + "?" + query))
-                    .header("Content-Type", "application/json")
-                    .header("X-Date", xDate)
-                    .header("Authorization", authorization)
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .uri(URI.create(endpoint + "/contents/generations/tasks/" + task.getTaskId()))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .GET()
                     .timeout(Duration.ofSeconds(30))
                     .build();
 
@@ -203,57 +187,45 @@ public class VideoGenService {
             if (response.statusCode() == 200) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-                Map<String, Object> data = (Map<String, Object>) result.get("data");
-                if (data != null) {
-                    String status = data.get("status") != null ? data.get("status").toString() : null;
-                    if ("done".equals(status)) {
-                        // Task succeeded
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> videoInfo = (Map<String, Object>) data.get("video");
-                        // videoInfo might be null or in different shapes; try common patterns
-                        String videoUrl = null;
-                        if (videoInfo != null) {
-                            if (videoInfo.get("video_url") != null) {
-                                videoUrl = videoInfo.get("video_url").toString();
-                            } else if (data.get("video_url") != null) {
-                                videoUrl = data.get("video_url").toString();
-                            }
-                        }
-                        // Fallback: check data directly
-                        if (videoUrl == null && data.get("video_url") != null) {
-                            videoUrl = data.get("video_url").toString();
-                        }
+                String status = result.get("status") != null ? result.get("status").toString() : null;
 
-                        if (videoUrl != null && !videoUrl.isBlank()) {
-                            task.setOriginalVideoUrl(videoUrl);
-                            // Download video to local storage
-                            String localPath = downloadVideo(videoUrl, task.getId());
-                            task.setVideoPath(localPath);
-                            task.setStatus("SUCCEEDED");
-                            log.info("Jimeng task {} succeeded, video saved to {}", task.getId(), localPath);
-                        } else {
-                            task.setStatus("FAILED");
-                            task.setErrorMessage("即梦返回成功但未包含视频URL");
-                            log.warn("Jimeng task {} done but no video URL in response: {}", task.getId(), response.body());
-                        }
-                    } else if ("failed".equals(status)) {
-                        task.setStatus("FAILED");
-                        task.setErrorMessage(data.get("message") != null ? data.get("message").toString() : "生成失败");
-                        log.warn("Jimeng task {} failed: {}", task.getId(), task.getErrorMessage());
-                    } else if ("not_found".equals(status) || "expired".equals(status)) {
-                        task.setStatus("FAILED");
-                        task.setErrorMessage("即梦任务已过期或不存在");
-                    } else {
-                        // queuing or running
-                        task.setStatus("PROCESSING");
+                if ("succeeded".equals(status)) {
+                    // Extract video URL from content
+                    String videoUrl = null;
+                    Object contentObj = result.get("content");
+                    if (contentObj instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> contentMap = (Map<String, Object>) contentObj;
+                        Object vu = contentMap.get("video_url");
+                        if (vu != null) videoUrl = vu.toString();
                     }
+
+                    if (videoUrl != null && !videoUrl.isBlank()) {
+                        task.setOriginalVideoUrl(videoUrl);
+                        String localPath = downloadVideo(videoUrl, task.getId());
+                        task.setVideoPath(localPath);
+                        task.setStatus("SUCCEEDED");
+                        log.info("Ark task {} succeeded, video saved to {}", task.getId(), localPath);
+                    } else {
+                        task.setStatus("FAILED");
+                        task.setErrorMessage("Ark返回成功但未包含视频URL");
+                        log.warn("Ark task {} succeeded but no video_url in response: {}", task.getId(), response.body());
+                    }
+                } else if ("failed".equals(status)) {
+                    task.setStatus("FAILED");
+                    Object errMsg = result.get("error");
+                    task.setErrorMessage(errMsg != null ? errMsg.toString() : "生成失败");
+                    log.warn("Ark task {} failed: {}", task.getId(), task.getErrorMessage());
+                } else if ("queued".equals(status)) {
+                    task.setStatus("SUBMITTED");
+                } else if ("running".equals(status)) {
+                    task.setStatus("PROCESSING");
                 }
             } else {
-                log.warn("Jimeng poll returned HTTP {} for task {}", response.statusCode(), task.getId());
+                log.warn("Ark poll returned HTTP {} for task {}", response.statusCode(), task.getId());
             }
         } catch (Exception e) {
-            log.error("Failed to poll Jimeng task {}", task.getId(), e);
-            // Don't mark as failed on transient poll errors
+            log.error("Failed to poll Ark task {}", task.getId(), e);
         }
 
         task.setUpdatedAt(LocalDateTime.now());
@@ -261,9 +233,6 @@ public class VideoGenService {
         return task;
     }
 
-    /**
-     * Download video from URL and save to local storage.
-     */
     private String downloadVideo(String videoUrl, String taskId) throws IOException, InterruptedException {
         String fileName = taskId + ".mp4";
         Path targetPath = storagePath.resolve(fileName);
@@ -286,9 +255,6 @@ public class VideoGenService {
         }
     }
 
-    /**
-     * Get all tasks for a user, ordered by creation time descending.
-     */
     public List<VideoGenTask> getUserTasks(String userId) {
         Map<String, Object> params = new HashMap<>();
         params.put("user_id", userId);
@@ -297,22 +263,15 @@ public class VideoGenService {
         return tasks;
     }
 
-    /**
-     * Get a single task by ID. Also polls Jimeng if in non-terminal state.
-     */
     public VideoGenTask getTask(String taskId) {
         return pollTask(taskId);
     }
 
-    /**
-     * Delete a task and its local video file.
-     */
     @Transactional
     public void deleteTask(String taskId) {
         VideoGenTask task = taskMapper.selectById(taskId);
         if (task == null) return;
 
-        // Delete local video file
         if (task.getVideoPath() != null) {
             try {
                 Files.deleteIfExists(Path.of(task.getVideoPath()));
@@ -324,9 +283,6 @@ public class VideoGenService {
         taskMapper.deleteById(taskId);
     }
 
-    /**
-     * Get the local video file path for playback.
-     */
     public Path getVideoPath(String taskId) {
         VideoGenTask task = taskMapper.selectById(taskId);
         if (task == null || task.getVideoPath() == null) {

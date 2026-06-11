@@ -122,14 +122,14 @@
             <label class="form-label">时长</label>
             <div class="btn-group">
               <button
-                :class="{ active: frames === 121 }"
+                :class="{ active: duration === 5 }"
                 class="btn-option"
-                @click="frames = 121"
+                @click="duration = 5"
               >5秒</button>
               <button
-                :class="{ active: frames === 241 }"
+                :class="{ active: duration === 10 }"
                 class="btn-option"
-                @click="frames = 241"
+                @click="duration = 10"
               >10秒</button>
             </div>
           </div>
@@ -174,7 +174,7 @@ import * as api from '../api/index.js'
 const emit = defineEmits(['close', 'play', 'toast'])
 
 const prompt = ref('')
-const frames = ref(121)
+const duration = ref(5)
 const aspectRatio = ref('16:9')
 const showAdvanced = ref(false)
 const submitting = ref(false)
@@ -248,7 +248,7 @@ async function submitTask() {
   try {
     const task = await api.submitVideoGen({
       prompt: prompt.value,
-      frames: frames.value,
+      duration: duration.value,
       aspectRatio: aspectRatio.value,
       seed: -1,
       firstFrameBase64: firstFrameBase64.value
@@ -256,7 +256,7 @@ async function submitTask() {
     tasks.value.unshift({
       ...task,
       prompt: prompt.value,
-      frames: frames.value,
+      duration: duration.value,
       aspectRatio: aspectRatio.value,
       status: task.status || 'SUBMITTED',
       createdAt: task.createdAt || new Date().toISOString()
@@ -369,7 +369,7 @@ function removeFirstFrame() {
   animation: spin 1.5s linear infinite;
 }
 
-@keyframes spin {
+@keyduration spin {
   to { transform: rotate(360deg); }
 }
 

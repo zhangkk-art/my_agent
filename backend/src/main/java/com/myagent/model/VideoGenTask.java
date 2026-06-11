@@ -14,7 +14,7 @@ public class VideoGenTask {
     private String conversationId;
     private String prompt;
     private String reqKey;
-    private Integer frames;
+    private Integer duration;
     private String aspectRatio;
     private Integer seed;
     private String firstFrameUrl;
@@ -43,8 +43,8 @@ public class VideoGenTask {
     public String getReqKey() { return reqKey; }
     public void setReqKey(String reqKey) { this.reqKey = reqKey; }
 
-    public Integer getFrames() { return frames; }
-    public void setFrames(Integer frames) { this.frames = frames; }
+    public Integer getDuration() { return duration; }
+    public void setDuration(Integer duration) { this.duration = duration; }
 
     public String getAspectRatio() { return aspectRatio; }
     public void setAspectRatio(String aspectRatio) { this.aspectRatio = aspectRatio; }
