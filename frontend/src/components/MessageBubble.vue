@@ -564,7 +564,11 @@ function cancelEdit() {
 
 function doDelete() {
   confirmingDelete.value = false
-  if (props.message.role === 'video') {
+  // Synthetic video user message: extract task ID from message id
+  if (props.message.id?.startsWith?.('video-usr-')) {
+    const taskId = props.message.id.replace('video-usr-', '')
+    emit('deleteVideoTask', taskId)
+  } else if (props.message.role === 'video') {
     emit('deleteVideoTask', props.message.videoTask?.id)
   } else {
     emit('deleteMessage', props.message.id)

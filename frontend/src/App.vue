@@ -163,24 +163,35 @@ function toggleVideoGen() {
 const videoTasksByConv = ref({})  // { conversationId: [VideoGenTask] }
 let videoPollTimer = null
 
-function videoTaskToMessage(task) {
-  return {
+function videoTaskToMessages(task) {
+  // Create createdAt timestamps 1ms apart so user msg always precedes video msg
+  const baseTime = new Date(task.createdAt).getTime()
+  const userMsg = {
+    id: 'video-usr-' + task.id,
+    _localKey: 'video-usr-' + task.id,
+    conversationId: task.conversationId,
+    role: 'user',
+    content: task.prompt,
+    createdAt: new Date(baseTime).toISOString()
+  }
+  const videoMsg = {
     id: 'video-' + task.id,
     _localKey: 'video-' + task.id,
     conversationId: task.conversationId,
     role: 'video',
-    content: task.prompt,
+    content: '',
     videoTask: task,
-    createdAt: task.createdAt
+    createdAt: new Date(baseTime + 1).toISOString()
   }
+  return [userMsg, videoMsg]
 }
 
 function mergeVideoTasks(conv) {
   if (!conv) return
   const tasks = videoTasksByConv.value[conv.id] || []
   // Remove old synthetic video messages before re-merging
-  const chatMsgs = (conv.messages || []).filter(m => m.role !== 'video')
-  const videoMsgs = tasks.map(t => videoTaskToMessage(t))
+  const chatMsgs = (conv.messages || []).filter(m => m.role !== 'video' && !m.id?.startsWith?.('video-usr-'))
+  const videoMsgs = tasks.flatMap(t => videoTaskToMessages(t))
   // Merge and sort by createdAt
   const all = [...chatMsgs, ...videoMsgs]
   all.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
