@@ -19,49 +19,71 @@
         </div>
       </div>
       <div class="video-msg-content">
+        <!-- Prompt text always visible -->
         <div class="video-msg-prompt">{{ message.content }}</div>
-        <div class="video-msg-status-row">
-          <!-- Pending/Processing: spinner -->
-          <div v-if="isVideoPending" class="video-status-pending">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-              <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-            </svg>
-            <span>{{ videoStatusLabel }}</span>
-          </div>
-          <!-- Succeeded: video player -->
-          <div v-else-if="message.videoTask.status === 'SUCCEEDED'" class="video-player-inline">
-            <div v-if="videoLoading" class="video-loading-inline">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-              </svg>
-              加载视频...
-            </div>
-            <div v-else-if="videoError" class="video-error-inline">
-              <span>视频加载失败</span>
-              <button class="btn-retry" @click="loadInlineVideo">重试</button>
-            </div>
-            <video
-              v-else-if="inlineVideoUrl"
-              :src="inlineVideoUrl"
-              controls
-              class="video-player-el"
-              @error="videoError = true"
-            >
-              您的浏览器不支持视频播放
-            </video>
-            <button v-else class="btn-load-video" @click="loadInlineVideo">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                <polygon points="8 5 19 12 8 19 8 5"/>
-              </svg>
-              加载视频
-            </button>
-          </div>
-          <!-- Failed -->
-          <div v-else-if="message.videoTask.status === 'FAILED'" class="video-status-failed">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-            </svg>
-            <span>生成失败{{ message.videoTask.errorMessage ? ': ' + message.videoTask.errorMessage : '' }}</span>
+
+        <!-- Video placeholder: dark rounded container -->
+        <div class="video-placeholder" :class="{ loaded: inlineVideoUrl }" @click="onPlaceholderClick">
+          <!-- Actual video player (replaces placeholder when loaded) -->
+          <video
+            v-if="inlineVideoUrl"
+            :src="inlineVideoUrl"
+            controls
+            class="video-player-el"
+            @error="videoError = true"
+            @click.stop
+          >
+            您的浏览器不支持视频播放
+          </video>
+
+          <!-- Overlay on top of placeholder -->
+          <div v-else class="video-placeholder-overlay">
+            <!-- Pending / Processing -->
+            <template v-if="isVideoPending">
+              <div class="vp-spinner">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" class="spin">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                </svg>
+              </div>
+              <div class="vp-status-text">{{ videoStatusLabel }}</div>
+            </template>
+
+            <!-- Succeeded: play button -->
+            <template v-else-if="message.videoTask.status === 'SUCCEEDED'">
+              <div v-if="videoLoading" class="vp-loading">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" class="spin">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                </svg>
+                <span>加载中...</span>
+              </div>
+              <template v-else-if="!videoError">
+                <div class="vp-play-btn">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="white" stroke="none">
+                    <polygon points="8 5 19 12 8 19 8 5"/>
+                  </svg>
+                </div>
+                <div class="vp-status-text">点击播放</div>
+              </template>
+              <template v-else>
+                <div class="vp-error">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                  </svg>
+                  <span>加载失败</span>
+                  <button class="vp-retry-btn" @click.stop="loadInlineVideo">重试</button>
+                </div>
+              </template>
+            </template>
+
+            <!-- Failed -->
+            <template v-else-if="message.videoTask.status === 'FAILED'">
+              <div class="vp-error-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5">
+                  <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+              </div>
+              <div class="vp-status-text">生成失败{{ message.videoTask.errorMessage ? ': ' + message.videoTask.errorMessage : '' }}</div>
+            </template>
           </div>
         </div>
       </div>
@@ -391,8 +413,17 @@ const videoStatusLabel = computed(() => {
   return map[props.message.videoTask?.status] || props.message.videoTask?.status || '等待中'
 })
 
+function onPlaceholderClick() {
+  if (isVideoPending.value) return
+  if (inlineVideoUrl.value) return
+  if (props.message.videoTask?.status === 'SUCCEEDED' && !videoLoading.value) {
+    loadInlineVideo()
+  }
+}
+
 async function loadInlineVideo() {
-  const taskId = props.message.videoTask?.id
+  if (!props.message.videoTask) return
+  const taskId = props.message.videoTask.id
   if (!taskId) return
   videoLoading.value = true
   videoError.value = false
@@ -908,7 +939,7 @@ function doDelete() {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-bottom-left-radius: 4px;
-  min-width: 280px;
+  min-width: 300px;
   max-width: 75%;
 }
 
@@ -926,83 +957,136 @@ function doDelete() {
   word-break: break-word;
 }
 
-.video-msg-status-row {
-  display: flex;
-  align-items: center;
-}
-
-.video-status-pending {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 8px 12px;
-  background: var(--bg-hover);
-  border-radius: 8px;
-}
-
-.video-status-failed {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--danger);
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-  border-radius: 8px;
-}
-
-.video-player-inline {
+/* ── Placeholder: dark video-like container ── */
+.video-placeholder {
+  position: relative;
   width: 100%;
+  max-width: 480px;
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: default;
+  transition: box-shadow 0.2s;
+}
+.video-placeholder:not(.loaded) {
+  cursor: pointer;
+}
+.video-placeholder:not(.loaded):hover {
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 16px rgba(0,0,0,0.3);
+}
+
+/* Grid pattern overlay to mimic video UI */
+.video-placeholder::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 40px, rgba(255,255,255,0.02) 40px, rgba(255,255,255,0.02) 41px),
+    repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(255,255,255,0.02) 40px, rgba(255,255,255,0.02) 41px);
+  pointer-events: none;
+  border-radius: 10px;
+}
+
+/* Film strip decoration at top & bottom */
+.video-placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.04) 8%, transparent 8%, transparent 92%, rgba(255,255,255,0.04) 92%, rgba(255,255,255,0.04) 100%);
+  pointer-events: none;
+  border-radius: 10px;
+}
+
+.video-placeholder.loaded {
+  aspect-ratio: auto;
+  background: #000;
+  cursor: default;
+}
+.video-placeholder.loaded::before,
+.video-placeholder.loaded::after {
+  display: none;
 }
 
 .video-player-el {
   width: 100%;
   max-width: 480px;
-  border-radius: 8px;
+  border-radius: 10px;
   outline: none;
-  background: #000;
+  display: block;
 }
 
-.video-loading-inline, .video-error-inline {
+/* ── Overlay ── */
+.video-placeholder-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  z-index: 1;
+}
+
+.vp-spinner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 16px;
-  background: var(--bg-hover);
-  border-radius: 8px;
+  justify-content: center;
 }
 
-.video-error-inline {
-  color: var(--danger);
-}
-
-.btn-load-video {
-  display: inline-flex;
+.vp-play-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: var(--success);
-  color: white;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  justify-content: center;
+  transition: transform 0.15s, background 0.15s;
 }
-.btn-load-video:hover {
-  opacity: 0.85;
+.video-placeholder:not(.loaded):hover .vp-play-btn {
+  transform: scale(1.1);
+  background: rgba(255, 255, 255, 0.3);
 }
 
-.btn-retry {
-  padding: 4px 10px;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  border-radius: 5px;
+.vp-status-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  max-width: 90%;
+}
+
+.vp-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
 }
-.btn-retry:hover {
-  background: var(--border-color);
+
+.vp-error, .vp-error-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.vp-error {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.vp-retry-btn {
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.vp-retry-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 </style>
