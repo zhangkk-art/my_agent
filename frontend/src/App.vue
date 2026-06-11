@@ -231,7 +231,7 @@ function startVideoPolling() {
         mergeVideoTasks(conv)
       }
     }
-  }, 5000)
+  }, 2000)
 }
 
 function stopVideoPolling() {

@@ -269,7 +269,7 @@ function startPolling() {
         console.warn('Poll failed for task', task.id, e)
       }
     }
-  }, 5000)
+  }, 2000)
 }
 
 function stopPolling() {
