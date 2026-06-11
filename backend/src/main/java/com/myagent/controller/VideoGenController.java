@@ -41,12 +41,15 @@ public class VideoGenController {
             @RequestBody VideoGenRequest request) {
         try {
             VideoGenTask task = videoGenService.submitTask(request, principal.getUserId());
-            return ResponseEntity.ok(Map.of(
-                    "id", task.getId(),
-                    "status", task.getStatus(),
-                    "taskId", task.getTaskId(),
-                    "createdAt", task.getCreatedAt()
-            ));
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("id", task.getId());
+            result.put("status", task.getStatus());
+            result.put("taskId", task.getTaskId());
+            result.put("createdAt", task.getCreatedAt());
+            if (task.getErrorMessage() != null) {
+                result.put("error", task.getErrorMessage());
+            }
+            return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
