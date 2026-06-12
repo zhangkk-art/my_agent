@@ -396,6 +396,20 @@
                 <button class="btn-shot-action" title="下移" :disabled="i === shots.length - 1" @click="moveShot(i, 1)">↓</button>
                 <button class="btn-shot-action btn-shot-delete" title="删除" @click="removeShot(i)">✕</button>
               </div>
+              <button class="btn-shot-expand" @click="showShotDetail = showShotDetail === i ? null : i" title="展开详情">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  :class="{ rotated: showShotDetail === i }">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+            </div>
+            <div v-if="showShotDetail === i" class="shot-detail-row">
+              <div class="shot-detail-fields">
+                <label>场景备注:</label>
+                <input type="text" v-model="shot.sceneNote" placeholder="场景标识（5-10字）" class="shot-detail-input" />
+                <label>音效提示:</label>
+                <input type="text" v-model="shot.audioHint" placeholder="音效/配乐建议" class="shot-detail-input" />
+              </div>
             </div>
           </div>
 
@@ -449,8 +463,19 @@
             🚀 全部生成 ({{ shots.length }}个镜头)
           </button>
 
+          <!-- Display mode toggle -->
+          <div class="sb-display-mode">
+            <span class="display-label">展示模式:</span>
+            <button :class="{ active: resultDisplayMode === 'individual' }" @click="resultDisplayMode = 'individual'">独立视频</button>
+            <button :class="{ active: resultDisplayMode === 'merged' }" @click="resultDisplayMode = 'merged'">合并播放</button>
+          </div>
+
+          <button v-if="resultDisplayMode === 'merged' && shots.some(s => s.status === 'SUCCEEDED')" class="btn-merged-play" @click="playAllShots">
+            ▶ 连续播放全部 ({{ shots.filter(s => s.status === 'SUCCEEDED').length }}个镜头)
+          </button>
+
           <!-- Shot status display -->
-          <div v-if="shots.some(s => s.status && s.status !== 'PENDING')" class="shot-status-list">
+          <div v-if="resultDisplayMode === 'individual' && shots.some(s => s.status && s.status !== 'PENDING')" class="shot-status-list">
             <div v-for="(shot, i) in shots" :key="'status-'+i" class="shot-status-row">
               <span>镜头{{ i + 1 }}</span>
               <span :class="'shot-status-badge status-' + (shot.status || 'PENDING').toLowerCase()">{{ shot.status || 'PENDING' }}</span>
@@ -528,6 +553,8 @@ const storyboardId = ref(null)
 const savingSb = ref(false)
 const submittingSb = ref(false)
 const savedStoryboards = ref([])
+const showShotDetail = ref(null)  // index of expanded shot, or null
+const resultDisplayMode = ref('individual')  // 'individual' | 'merged'
 
 const ratios = ['16:9', '9:16', '1:1']
 
@@ -939,6 +966,20 @@ function playShotVideo(index) {
       emit('play', task)
     }
   }
+}
+
+function playAllShots() {
+  const succeeded = shots.value.filter(s => s.status === 'SUCCEEDED' && s.taskId)
+  if (!succeeded.length) return
+  let current = 0
+  function playNext() {
+    if (current < succeeded.length) {
+      emit('play', { id: succeeded[current].taskId })
+      // Users manually advance; this just queues them all
+      current++
+    }
+  }
+  playNext()
 }
 </script>
 
@@ -1791,11 +1832,11 @@ function playShotVideo(index) {
 
 .shot-table { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
 .shot-table-header {
-  display: grid; grid-template-columns: 40px 1fr 80px 60px 80px; gap: 6px;
+  display: grid; grid-template-columns: 40px 1fr 80px 60px 80px 24px; gap: 6px;
   padding: 8px 10px; background: var(--bg-secondary); font-size: 12px; font-weight: 600; color: var(--text-secondary);
 }
 .shot-row {
-  display: grid; grid-template-columns: 40px 1fr 80px 60px 80px; gap: 6px;
+  display: grid; grid-template-columns: 40px 1fr 80px 60px 80px 24px; gap: 6px;
   padding: 8px 10px; border-top: 1px solid var(--border-color); align-items: center;
 }
 .shot-row:hover { background: var(--bg-hover); }
@@ -1838,4 +1879,21 @@ function playShotVideo(index) {
   background: transparent; color: var(--accent); font-size: 11px; cursor: pointer;
 }
 .btn-shot-submit:hover, .btn-shot-play:hover { background: var(--accent); color: #fff; }
+
+/* ── Expandable shot details ── */
+.btn-shot-expand { padding: 2px 4px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.btn-shot-expand:hover { color: var(--text); }
+.btn-shot-expand svg.rotated { transform: rotate(180deg); }
+.shot-detail-row { padding: 8px 10px 8px 46px; background: var(--bg-secondary); border-top: 1px solid var(--border); }
+.shot-detail-fields { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.shot-detail-fields label { color: var(--text-secondary); white-space: nowrap; }
+.shot-detail-input { flex: 1; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 12px; }
+
+/* ── Merged display mode ── */
+.sb-display-mode { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 12px; }
+.sb-display-mode .display-label { color: var(--text-secondary); }
+.sb-display-mode button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+.sb-display-mode button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.btn-merged-play { display: flex; align-items: center; gap: 4px; padding: 8px 16px; background: var(--success); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; width: 100%; justify-content: center; margin-top: 8px; }
+.btn-merged-play:hover { opacity: 0.9; }
 </style>
