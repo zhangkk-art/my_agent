@@ -1942,13 +1942,25 @@ async function mergeVideos() {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 12px 8px; border: 2px solid var(--border); border-radius: 10px;
   background: var(--bg); cursor: pointer; transition: all 0.2s; text-align: center;
+  position: relative; opacity: 0.55;
 }
-.display-card:hover { border-color: var(--primary); }
-.display-card.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--bg)); }
+.display-card:hover { border-color: var(--primary); opacity: 0.8; }
+.display-card.active {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 15%, var(--bg)), color-mix(in srgb, var(--primary) 5%, var(--bg)));
+  opacity: 1;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+}
 .display-card-icon { color: var(--text-secondary); transition: color 0.2s; }
 .display-card.active .display-card-icon { color: var(--primary); }
 .display-card-title { font-size: 13px; font-weight: 600; color: var(--text); }
 .display-card-desc { font-size: 11px; color: var(--text-secondary); }
+.display-card.active .display-card-title { color: var(--primary); }
+.display-card::after {
+  content: "✓"; position: absolute; top: 6px; right: 8px;
+  font-size: 12px; font-weight: 700; color: transparent; transition: color 0.2s;
+}
+.display-card.active::after { color: var(--primary); }
 .merged-section { margin-top: 12px; }
 .btn-merged-play { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; width: 100%; justify-content: center; }
 .btn-merged-play:hover:not(:disabled) { opacity: 0.9; }
