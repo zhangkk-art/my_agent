@@ -327,8 +327,8 @@
           </div>
         </div>
 
-        <!-- Phase 2: Edit storyboard / Read-only summary -->
-        <div v-if="shots.length > 0 && resultDisplayMode !== 'merged'" class="storyboard-section">
+        <!-- Phase 2: Edit storyboard (always editable) -->
+        <div v-if="shots.length > 0" class="storyboard-section">
           <div class="sb-title-row">
             <input v-model="storyboardTitle" class="sb-title-input" placeholder="分镜标题..." />
             <button class="btn-save-sb" :disabled="savingSb || !storyboardTitle.trim()" @click="saveStoryboard">
@@ -391,25 +391,82 @@
           </button>
         </div>
 
-        <!-- Merged mode: read-only shot summary -->
-        <div v-if="shots.length > 0 && resultDisplayMode === 'merged'" class="storyboard-section shot-summary-section">
-          <div class="vgp-section-title">镜头列表</div>
-          <div class="shot-summary-list">
-            <div v-for="(shot, i) in shots" :key="'summary-'+i" class="shot-summary-item">
-              <span class="summary-num" :class="'summary-status-' + (shot.status || 'PENDING').toLowerCase()">{{ i + 1 }}</span>
-              <div class="summary-content">
-                <p class="summary-desc">{{ shot.shotDescription }}</p>
-                <span class="summary-meta">{{ shot.cameraMovement || '固定' }} · {{ shot.duration || 5 }}s{{ shot.status === 'SUCCEEDED' ? ' · ✅ 已完成' : shot.status === 'FAILED' ? ' · ❌ 失败' : ' · ⏳ ' + (shot.status || 'PENDING') }}</span>
+        <!-- Phase 3: Submit settings + display mode + result -->
+        <div v-if="shots.length > 0" class="storyboard-section">
+          <!-- Display mode toggle -->
+          <div class="sb-display-mode">
+            <span class="display-label">展示模式</span>
+            <div class="display-mode-cards">
+              <div class="display-card"
+                :class="{ active: resultDisplayMode === 'individual' }"
+                @click="resultDisplayMode = 'individual'">
+                <div class="display-card-icon">
+                  <svg width="40" height="28" viewBox="0 0 40 28">
+                    <rect x="1" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                    <polygon points="6,8 6,20 10,14" fill="currentColor" opacity="0.5"/>
+                    <rect x="15" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                    <polygon points="20,8 20,24 24,14" fill="currentColor" opacity="0.5"/>
+                    <rect x="29" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
+                    <polygon points="34,8 34,20 38,14" fill="currentColor" opacity="0.3"/>
+                  </svg>
+                </div>
+                <span class="display-card-title">独立视频</span>
+                <span class="display-card-desc">逐个播放每个镜头</span>
+              </div>
+              <div class="display-card"
+                :class="{ active: resultDisplayMode === 'merged' }"
+                @click="resultDisplayMode = 'merged'">
+                <div class="display-card-icon">
+                  <svg width="40" height="28" viewBox="0 0 40 28">
+                    <rect x="1" y="2" width="12" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                    <polygon points="6,8 6,20 10,14" fill="currentColor" opacity="0.4"/>
+                    <line x1="13" y1="14" x2="17" y2="14" stroke="currentColor" stroke-width="1" stroke-dasharray="2,2"/>
+                    <polygon points="18,9 25,14 18,19" fill="currentColor"/>
+                    <rect x="25" y="2" width="14" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
+                    <polygon points="31,8 31,20 37,14" fill="currentColor"/>
+                  </svg>
+                </div>
+                <span class="display-card-title">合并播放</span>
+                <span class="display-card-desc">FFmpeg 转场合并为一条视频</span>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Phase 3: Submit settings (reuse existing advanced settings) -->
-        <div v-if="shots.length > 0" class="storyboard-section">
-          <div v-if="resultDisplayMode !== 'merged'" class="vgp-section-title">生成设置</div>
+          <!-- Merged mode: merge button / loading / player -->
+          <div v-if="resultDisplayMode === 'merged' && shots.some(s => s.status === 'SUCCEEDED')" class="merged-section">
+            <div v-if="!mergedVideoUrl && !merging">
+              <button class="btn-merged-play" :disabled="!storyboardId" @click="mergeVideos">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="3" width="8" height="10" rx="1"/><rect x="14" y="3" width="8" height="10" rx="1"/>
+                  <polygon points="6 16 6 21 8 21 8 17 10 17 10 21 12 21 12 16 6 16"/>
+                  <polygon points="16 16 16 21 18 21 18 17 20 17 20 21 22 21 22 16 16 16"/>
+                </svg>
+                FFmpeg 转场合并 ({{ shots.filter(s => s.status === 'SUCCEEDED').length }}个镜头)
+              </button>
+              <p class="merged-hint" v-if="!storyboardId">请先保存分镜</p>
+            </div>
+            <div v-if="merging" class="merging-status">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+              <span>正在合并视频，请稍候...</span>
+            </div>
+            <video v-if="mergedVideoUrl" :src="mergedVideoUrl" controls autoplay class="merged-video-player"></video>
+          </div>
 
-          <div v-if="resultDisplayMode !== 'merged'" class="form-row">
+          <!-- Individual mode: per-shot status -->
+          <div v-if="resultDisplayMode === 'individual' && shots.some(s => s.status && s.status !== 'PENDING')" class="shot-status-list">
+            <div v-for="(shot, i) in shots" :key="'status-'+i" class="shot-status-row">
+              <span>镜头{{ i + 1 }}</span>
+              <span :class="'shot-status-badge status-' + (shot.status || 'PENDING').toLowerCase()">{{ shot.status || 'PENDING' }}</span>
+              <button v-if="shot.status === 'PENDING'" class="btn-shot-submit" @click="submitSingleShot(i)">生成此镜</button>
+              <button v-if="shot.status === 'SUCCEEDED'" class="btn-shot-play" @click="playShotVideo(i)">播放</button>
+            </div>
+          </div>
+
+          <div class="vgp-section-title">生成设置</div>
+
+          <div class="form-row">
             <label class="form-label">比例</label>
             <div class="btn-group">
               <button v-for="r in ratios" :key="r" :class="{ active: aspectRatio === r }" class="btn-option" @click="aspectRatio = r">{{ r }}</button>
@@ -438,76 +495,6 @@
             </svg>
             🚀 全部生成 ({{ shots.length }}个镜头)
           </button>
-
-          <!-- Display mode toggle -->
-          <div class="sb-display-mode">
-            <span class="display-label">展示模式</span>
-            <div class="display-mode-cards">
-              <div class="display-card"
-                :class="{ active: resultDisplayMode === 'individual' }"
-                @click="resultDisplayMode = 'individual'">
-                <div class="display-card-icon">
-                  <svg width="40" height="28" viewBox="0 0 40 28">
-                    <rect x="1" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-                    <polygon points="6,8 6,20 10,14" fill="currentColor" opacity="0.5"/>
-                    <rect x="15" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-                    <polygon points="20,8 20,20 24,14" fill="currentColor" opacity="0.5"/>
-                    <rect x="29" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
-                    <polygon points="34,8 34,20 38,14" fill="currentColor" opacity="0.3"/>
-                  </svg>
-                </div>
-                <span class="display-card-title">独立视频</span>
-                <span class="display-card-desc">逐个播放每个镜头</span>
-              </div>
-              <div class="display-card"
-                :class="{ active: resultDisplayMode === 'merged' }"
-                @click="resultDisplayMode = 'merged'">
-                <div class="display-card-icon">
-                  <svg width="40" height="28" viewBox="0 0 40 28">
-                    <rect x="1" y="2" width="12" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-                    <polygon points="6,8 6,20 10,14" fill="currentColor" opacity="0.4"/>
-                    <line x1="13" y1="14" x2="17" y2="14" stroke="currentColor" stroke-width="1" stroke-dasharray="2,2"/>
-                    <polygon points="18,9 25,14 18,19" fill="currentColor"/>
-                    <rect x="25" y="2" width="14" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
-                    <polygon points="31,8 31,20 37,14" fill="currentColor"/>
-                  </svg>
-                </div>
-                <span class="display-card-title">合并播放</span>
-                <span class="display-card-desc">FFmpeg 转场合并为一条视频</span>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="resultDisplayMode === 'merged' && shots.some(s => s.status === 'SUCCEEDED')" class="merged-section">
-            <div v-if="!mergedVideoUrl && !merging">
-              <button class="btn-merged-play" :disabled="!storyboardId" @click="mergeVideos">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="3" width="8" height="10" rx="1"/><rect x="14" y="3" width="8" height="10" rx="1"/>
-                  <polygon points="6 16 6 21 8 21 8 17 10 17 10 21 12 21 12 16 6 16"/>
-                  <polygon points="16 16 16 21 18 21 18 17 20 17 20 21 22 21 22 16 16 16"/>
-                </svg>
-                FFmpeg 转场合并 ({{ shots.filter(s => s.status === 'SUCCEEDED').length }}个镜头)
-              </button>
-              <p class="merged-hint" v-if="!storyboardId">请先保存分镜</p>
-            </div>
-            <div v-if="merging" class="merging-status">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-              </svg>
-              <span>正在合并视频，请稍候...</span>
-            </div>
-            <video v-if="mergedVideoUrl" :src="mergedVideoUrl" controls autoplay class="merged-video-player"></video>
-          </div>
-
-          <!-- Shot status display -->
-          <div v-if="resultDisplayMode === 'individual' && shots.some(s => s.status && s.status !== 'PENDING')" class="shot-status-list">
-            <div v-for="(shot, i) in shots" :key="'status-'+i" class="shot-status-row">
-              <span>镜头{{ i + 1 }}</span>
-              <span :class="'shot-status-badge status-' + (shot.status || 'PENDING').toLowerCase()">{{ shot.status || 'PENDING' }}</span>
-              <button v-if="shot.status === 'PENDING'" class="btn-shot-submit" @click="submitSingleShot(i)">生成此镜</button>
-              <button v-if="shot.status === 'SUCCEEDED'" class="btn-shot-play" @click="playShotVideo(i)">播放</button>
-            </div>
-          </div>
         </div>
       </template>
     </div>
