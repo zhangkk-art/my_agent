@@ -477,3 +477,54 @@ export function getVideoUrl(taskId) {
   const token = getToken();
   return `${BASE_URL}/video-gen/tasks/${taskId}/video${token ? '?token=' + token : ''}`;
 }
+
+// ── Video Prompt Engineering ──
+
+export async function enhanceVideoPrompt(prompt) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/prompt/enhance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '增强失败');
+  }
+  return res.json();
+}
+
+export async function translateVideoPrompt(prompt, target) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/prompt/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, target })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '翻译失败');
+  }
+  return res.json();
+}
+
+export async function getVideoPromptTemplates() {
+  const res = await apiFetch(`${BASE_URL}/video-gen/prompt/templates`);
+  if (!res.ok) throw new Error('Failed to fetch video prompt templates');
+  return res.json();
+}
+
+export async function createVideoPromptTemplate(data) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/prompt/templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error('Failed to create video prompt template');
+  return res.json();
+}
+
+export async function deleteVideoPromptTemplate(id) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/prompt/templates/${id}`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) throw new Error('Failed to delete video prompt template');
+}
