@@ -275,10 +275,13 @@ public class StoryboardService {
      * Delete a storyboard by ID. Cascade delete handled by DB foreign key.
      */
     @Transactional
-    public void deleteStoryboard(String id) {
+    public void deleteStoryboard(String id, String userId) {
         Storyboard storyboard = storyboardMapper.selectById(id);
         if (storyboard == null) {
-            throw new NoSuchElementException("分镜不存在");
+            throw new NoSuchElementException("分镜不存在: " + id);
+        }
+        if (!storyboard.getUserId().equals(userId)) {
+            throw new SecurityException("无权访问此分镜");
         }
         storyboardMapper.deleteById(id);
         log.info("Storyboard deleted: id={}", id);

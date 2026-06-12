@@ -106,6 +106,7 @@ public class StoryboardController {
             result.put("id", saved.getId());
             result.put("title", saved.getTitle());
             result.put("shotCount", shots.size());
+            result.put("shots", shotsData);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             log.error("Failed to save storyboard", e);
@@ -178,10 +179,12 @@ public class StoryboardController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable String id) {
         try {
-            storyboardService.deleteStoryboard(id);
+            storyboardService.deleteStoryboard(id, principal.getUserId());
             return ResponseEntity.ok(Map.of("deleted", true));
         } catch (NoSuchElementException e) {
             return ResponseEntity.notFound().build();
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
         }
     }
 
