@@ -46,5 +46,29 @@ CREATE TABLE IF NOT EXISTS messages (
     completion_tokens INT NULL DEFAULT NULL,
     total_tokens INT NULL DEFAULT NULL,
     created_at DATETIME NOT NULL,
+        INDEX idx_msg_conv (conversation_id, created_at),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS video_gen_tasks (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    conversation_id VARCHAR(36),
+    prompt TEXT NOT NULL,
+    req_key VARCHAR(64) NOT NULL DEFAULT 'jimeng_ti2v_v30_pro',
+    duration INT DEFAULT 5,
+    aspect_ratio VARCHAR(8) DEFAULT '16:9',
+    seed INT DEFAULT -1,
+    first_frame_url TEXT,
+    task_id VARCHAR(128),
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    video_path VARCHAR(512),
+    original_video_url TEXT,
+    subtitle_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    subtitle_path VARCHAR(512) NULL DEFAULT NULL,
+    error_message TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_vgt_user_id (user_id),
+    INDEX idx_vgt_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

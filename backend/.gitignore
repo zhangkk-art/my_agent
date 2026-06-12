@@ -52,3 +52,6 @@ desktop.ini
 # ── JVM 崩溃日志 ──
 hs_err_pid*
 replay_pid*
+
+# -- 视频文件 --
+data/

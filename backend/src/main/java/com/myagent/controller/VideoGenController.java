@@ -162,10 +162,16 @@ public class VideoGenController {
                 return ResponseEntity.notFound().build();
             }
             Resource resource = new FileSystemResource(videoPath);
-            return ResponseEntity.ok()
+            ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType("video/mp4"))
                     .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + id + ".mp4\"")
-                    .body(resource);
+                    .header(HttpHeaders.ACCEPT_RANGES, "bytes");
+            try {
+                builder.contentLength(resource.contentLength());
+            } catch (Exception ignored) {
+                // contentLength may throw IOException, continue without it
+            }
+            return builder.body(resource);
         } catch (NoSuchElementException e) {
             return ResponseEntity.notFound().build();
         }

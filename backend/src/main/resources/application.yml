@@ -76,13 +76,15 @@ app:
     endpoint: https://api.bochaai.com/v1/web-search
   # Ark API — video generation (即梦AI / Seedance)
   ark:
-    api-key: ${ARK_API_KEY:}
+    api-key: ${ARK_API_KEY:ark-264d77ec-b683-421f-a5c9-bfb2b0712ced-ce42d}
     endpoint: https://ark.cn-beijing.volces.com/api/v3
-    model: ${ARK_VIDEO_MODEL:doubao-seedance-1-0-pro-250528}
+    model: ${ARK_VIDEO_MODEL:doubao-seedance-1-5-pro-251215}
 
   video:
     storage:
       path: ${VIDEO_STORAGE_PATH:./data/videos}
+    ffmpeg:
+      path: D:/install/ffmpeg/ffmpeg-8.1.1-full_build/bin/ffmpeg.exe
 
   elasticsearch:
     host: ${ES_HOST:localhost}

@@ -509,7 +509,7 @@ public class ChatService {
     }
 
     /** Build a stream that continues from a previously interrupted assistant message. */
-    public StreamContext continueStream(String conversationId, String messageId, String model,
+    public StreamContext continueStream(String conversationId, String messageId, String model, String userId,
                                         Double temperature, Integer maxTokens) {
         Conversation conv = conversationService.getConversation(conversationId);
         List<Message> msgs = conv.getMessages();
@@ -537,9 +537,9 @@ public class ChatService {
         return new StreamContext(conversationId, flux);
     }
 
-    public StreamContext regenerateStream(String conversationId, String userMessage, String model,
+    public StreamContext regenerateStream(String conversationId, String userMessage, String model, String userId,
                                           boolean webSearch, Double temperature, Integer maxTokens) {
-        Conversation conv = conversationService.prepareForRegenerate(conversationId, userMessage);
+        Conversation conv = conversationService.prepareForRegenerate(conversationId, userMessage, userId);
 
         List<org.springframework.ai.chat.messages.Message> history = buildHistory(conv.getMessages(), userMessage, webSearch);
         if (!history.isEmpty() && history.get(history.size() - 1) instanceof UserMessage) {

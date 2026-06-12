@@ -91,6 +91,18 @@ public class SchemaMigration implements ApplicationRunner {
             "  INDEX idx_vgt_user_id (user_id)," +
             "  INDEX idx_vgt_status (status)" +
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // Subtitle support for video generation
+        addColumnIfMissing("video_gen_tasks", "subtitle_enabled",
+                "ALTER TABLE video_gen_tasks ADD COLUMN subtitle_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+        addColumnIfMissing("video_gen_tasks", "subtitle_path",
+                "ALTER TABLE video_gen_tasks ADD COLUMN subtitle_path VARCHAR(512) NULL DEFAULT NULL");
+        addColumnIfMissing("video_gen_tasks", "generate_audio",
+                "ALTER TABLE video_gen_tasks ADD COLUMN generate_audio BOOLEAN NOT NULL DEFAULT TRUE");
+        addColumnIfMissing("video_gen_tasks", "narrate_subtitles",
+                "ALTER TABLE video_gen_tasks ADD COLUMN narrate_subtitles BOOLEAN NOT NULL DEFAULT FALSE");
+        addColumnIfMissing("video_gen_tasks", "custom_subtitles",
+                "ALTER TABLE video_gen_tasks ADD COLUMN custom_subtitles TEXT NULL DEFAULT NULL");
     }
 
     private void addColumnIfMissing(String table, String column, String alterSql) {

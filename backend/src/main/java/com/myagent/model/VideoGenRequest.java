@@ -1,5 +1,7 @@
 package com.myagent.model;
 
+import java.util.List;
+
 public class VideoGenRequest {
 
     private String prompt;
@@ -8,6 +10,10 @@ public class VideoGenRequest {
     private Integer seed = -1;
     private String firstFrameBase64;     // optional first-frame image (base64, no prefix)
     private String conversationId;       // associate with a conversation
+    private Boolean subtitleEnabled = false;  // whether to burn subtitles into the video
+    private Boolean generateAudio = true;       // whether to generate synchronized audio (1.5 pro)
+    private Boolean narrateSubtitles = false;    // TTS voice reading subtitle text into video
+    private List<SubtitleEntry> customSubtitles;  // user-defined subtitle entries with timing
 
     public VideoGenRequest() {}
 
@@ -28,4 +34,16 @@ public class VideoGenRequest {
 
     public String getFirstFrameBase64() { return firstFrameBase64; }
     public void setFirstFrameBase64(String firstFrameBase64) { this.firstFrameBase64 = firstFrameBase64; }
+
+    public Boolean getSubtitleEnabled() { return subtitleEnabled; }
+    public void setSubtitleEnabled(Boolean subtitleEnabled) { this.subtitleEnabled = subtitleEnabled; }
+
+    public Boolean getGenerateAudio() { return generateAudio; }
+    public void setGenerateAudio(Boolean generateAudio) { this.generateAudio = generateAudio; }
+
+    public Boolean getNarrateSubtitles() { return narrateSubtitles; }
+    public void setNarrateSubtitles(Boolean narrateSubtitles) { this.narrateSubtitles = narrateSubtitles; }
+
+    public List<SubtitleEntry> getCustomSubtitles() { return customSubtitles; }
+    public void setCustomSubtitles(List<SubtitleEntry> customSubtitles) { this.customSubtitles = customSubtitles; }
 }

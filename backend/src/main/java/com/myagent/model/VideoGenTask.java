@@ -22,6 +22,11 @@ public class VideoGenTask {
     private String status;
     private String videoPath;
     private String originalVideoUrl;
+    private Boolean subtitleEnabled;
+    private String subtitlePath;
+    private Boolean generateAudio;
+    private Boolean narrateSubtitles;
+    private String customSubtitles;  // JSON array of SubtitleEntry for user-defined subtitles
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -66,6 +71,21 @@ public class VideoGenTask {
 
     public String getOriginalVideoUrl() { return originalVideoUrl; }
     public void setOriginalVideoUrl(String originalVideoUrl) { this.originalVideoUrl = originalVideoUrl; }
+
+    public Boolean getSubtitleEnabled() { return subtitleEnabled; }
+    public void setSubtitleEnabled(Boolean subtitleEnabled) { this.subtitleEnabled = subtitleEnabled; }
+
+    public String getSubtitlePath() { return subtitlePath; }
+    public void setSubtitlePath(String subtitlePath) { this.subtitlePath = subtitlePath; }
+
+    public Boolean getGenerateAudio() { return generateAudio; }
+    public void setGenerateAudio(Boolean generateAudio) { this.generateAudio = generateAudio; }
+
+    public Boolean getNarrateSubtitles() { return narrateSubtitles; }
+    public void setNarrateSubtitles(Boolean narrateSubtitles) { this.narrateSubtitles = narrateSubtitles; }
+
+    public String getCustomSubtitles() { return customSubtitles; }
+    public void setCustomSubtitles(String customSubtitles) { this.customSubtitles = customSubtitles; }
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }

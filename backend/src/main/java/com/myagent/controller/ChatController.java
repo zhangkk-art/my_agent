@@ -44,9 +44,9 @@ public class ChatController {
     }
 
     @PostMapping("/chat")
-    public Map<String, Object> chat(@RequestBody ChatRequest request) {
+    public Map<String, Object> chat(@AuthenticationPrincipal UserPrincipal principal, @RequestBody ChatRequest request) {
         Message reply = chatService.chat(request.getConversationId(), request.getMessage(), request.getModel());
-        Conversation conversation = conversationService.getConversation(reply.getConversationId());
+        Conversation conversation = conversationService.getConversation(reply.getConversationId(), principal.getUserId());
         return Map.of(
                 "conversationId", reply.getConversationId(),
                 "message", reply,
@@ -79,22 +79,20 @@ public class ChatController {
     }
 
     @PostMapping(value = "/chat/continue", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public void continueGeneration(@RequestBody ChatRequest request,
+    public void continueGeneration(@AuthenticationPrincipal UserPrincipal principal, @RequestBody ChatRequest request,
                                    HttpServletRequest req,
                                    HttpServletResponse resp) {
         doStreamAppend(req, resp,
-                chatService.continueStream(request.getConversationId(), request.getMessageId(),
-                        request.getModel(), request.getTemperature(), request.getMaxTokens()),
+                chatService.continueStream(request.getConversationId(), request.getMessageId(), request.getModel(), principal.getUserId(),
+                        request.getTemperature(), request.getMaxTokens()),
                 request.getMessageId());
     }
 
     @PostMapping(value = "/chat/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public void regenerate(@RequestBody ChatRequest request,
+    public void regenerate(@AuthenticationPrincipal UserPrincipal principal, @RequestBody ChatRequest request,
                            HttpServletRequest req,
                            HttpServletResponse resp) {
-        doStream(req, resp, chatService.regenerateStream(
-                request.getConversationId(), request.getMessage(), request.getModel(),
-                request.isWebSearch(), request.getTemperature(), request.getMaxTokens()));
+        doStream(req, resp, chatService.regenerateStream(request.getConversationId(), request.getMessage(), request.getModel(), principal.getUserId(), request.isWebSearch(), request.getTemperature(), request.getMaxTokens()));
     }
 
     private void doStream(HttpServletRequest req, HttpServletResponse resp, ChatService.StreamContext ctx) {
