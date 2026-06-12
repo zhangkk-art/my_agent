@@ -528,3 +528,87 @@ export async function deleteVideoPromptTemplate(id) {
   });
   if (!res.ok) throw new Error('Failed to delete video prompt template');
 }
+
+// ── Storyboard (分镜编排) ──
+
+export async function generateStoryboard(idea, shotCount) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idea, shotCount })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '分镜生成失败');
+  }
+  return res.json();
+}
+
+export async function saveStoryboard(data) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '保存分镜失败');
+  }
+  return res.json();
+}
+
+export async function getStoryboard(id) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch storyboard');
+  return res.json();
+}
+
+export async function updateStoryboard(id, data) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '更新分镜失败');
+  }
+  return res.json();
+}
+
+export async function deleteStoryboard(id) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete storyboard');
+}
+
+export async function getStoryboards(conversationId) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboards?conversationId=${encodeURIComponent(conversationId)}`);
+  if (!res.ok) throw new Error('Failed to fetch storyboards');
+  return res.json();
+}
+
+export async function submitStoryboard(id, params) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard/${id}/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params || {})
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '提交失败');
+  }
+  return res.json();
+}
+
+export async function submitStoryboardShot(storyboardId, shotId, params) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard/${storyboardId}/shots/${shotId}/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params || {})
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '提交失败');
+  }
+  return res.json();
+}
