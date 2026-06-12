@@ -254,14 +254,6 @@
             </label>
           </div>
 
-          <div class="negative-prompt-section">
-            <label class="form-label">排除内容（反向提示词）</label>
-            <div class="negative-tags">
-              <button v-for="tag in negativeTagOptions" :key="tag" class="tag-negative" :class="{ selected: selectedNegativeTags.includes(tag) }" @click="toggleNegativeTag(tag)">{{ tag }}</button>
-            </div>
-            <input type="text" v-model="customNegative" class="input-custom-negative" placeholder="输入想排除的内容，逗号分隔..." />
-          </div>
-
           <div v-if="customSubtitlesEnabled" class="custom-subtitles-editor">
             <div class="subtitle-entries">
               <div v-for="(entry, i) in customSubtitleEntries" :key="i" class="subtitle-entry">
@@ -284,6 +276,14 @@
               </svg>
               添加字幕
             </button>
+          </div>
+
+          <div class="negative-prompt-section">
+            <label class="form-label">排除内容（反向提示词）</label>
+            <div class="negative-tags">
+              <button v-for="tag in negativeTagOptions" :key="tag" class="tag-negative" :class="{ selected: selectedNegativeTags.includes(tag) }" @click="toggleNegativeTag(tag)">{{ tag }}</button>
+            </div>
+            <input type="text" v-model="customNegative" class="input-custom-negative" placeholder="输入想排除的内容，逗号分隔..." />
           </div>
         </div>
 
