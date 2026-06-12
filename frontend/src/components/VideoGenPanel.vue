@@ -473,7 +473,7 @@
             </div>
           </div>
 
-          <div v-if="resultDisplayMode !== 'merged'" class="form-row">
+          <div v-if="true" class="form-row">
             <label class="form-label">生成音频</label>
             <label class="toggle-switch">
               <input type="checkbox" v-model="generateAudio" />
@@ -481,7 +481,7 @@
             </label>
           </div>
 
-          <div v-if="resultDisplayMode !== 'merged'" class="negative-prompt-section">
+          <div v-if="true" class="negative-prompt-section">
             <label class="form-label">排除内容（反向提示词）</label>
             <div class="negative-tags">
               <button v-for="tag in negativeTagOptions" :key="tag" class="tag-negative" :class="{ selected: selectedNegativeTags.includes(tag) }" @click="toggleNegativeTag(tag)">{{ tag }}</button>
@@ -489,7 +489,7 @@
             <input type="text" v-model="customNegative" class="input-custom-negative" placeholder="输入想排除的内容，逗号分隔..." />
           </div>
 
-          <button v-if="resultDisplayMode !== 'merged'" class="btn-submit" :disabled="!shots.length || submittingSb" @click="submitAllShots">
+          <button v-if="true" class="btn-submit" :disabled="!shots.length || submittingSb" @click="submitAllShots">
             <svg v-if="submittingSb" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
               <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
             </svg>
