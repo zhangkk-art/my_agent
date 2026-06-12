@@ -142,7 +142,7 @@ public class SchemaMigration implements ApplicationRunner {
                     "INSERT INTO video_prompt_templates (id, name, content, category, sort_order, is_preset, created_at, updated_at) " +
                     "VALUES (?, ?, ?, ?, ?, TRUE, NOW(), NOW())",
                     java.util.UUID.randomUUID().toString(),
-                    presets[i][0], presets[i][1], presets[i][2], i);
+                    presets[i][0], presets[i][2], presets[i][1], i);
             }
             log.info("Schema migration: seeded {} video prompt templates", presets.length);
         }
