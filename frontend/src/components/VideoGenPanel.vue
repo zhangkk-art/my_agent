@@ -6,7 +6,7 @@
           <polygon points="23 7 16 12 23 17 23 7"/>
           <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
         </svg>
-        <span>视频生成 (即梦3.0 Pro)</span>
+        <span>视频生成 (Seedance 1.0 Pro Fast)</span>
       </div>
       <button class="btn-icon-sm" title="返回聊天" @click="$emit('close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -69,7 +69,7 @@
             </template>
           </div>
           <div class="task-info">
-            <div class="task-prompt">{{ task.prompt.substring(0, 50) }}{{ task.prompt.length > 50 ? '...' : '' }}</div>
+            <div class="task-prompt">{{ task.title || task.prompt.substring(0, 50) }}{{ !task.title && task.prompt.length > 50 ? '...' : '' }}</div>
             <div class="task-meta">
               <span :class="'task-status-text status-' + task.status.toLowerCase()">{{ statusLabel(task.status) }}</span>
               <span v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</span>
@@ -86,23 +86,36 @@
               </svg>
               播放
             </button>
+            <a
+              v-if="task.status === 'SUCCEEDED'"
+              class="btn-download"
+              title="下载视频"
+              :href="getTaskVideoUrl(task.id)"
+              :download="(task.title || '视频') + '.mp4'"
+              @click.stop
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </a>
             <button
               v-if="task.status === 'SUCCEEDED'"
               class="btn-post-process"
               :disabled="processingTaskId === task.id"
-              title="嵌入字幕"
-              @click="postProcessTask(task, 'subtitle')"
+              title="编辑字幕"
+              @click="openSubtitleEditor(task)"
             >
               {{ processingTaskId === task.id && processingType === 'subtitle' ? '处理中...' : '字幕' }}
             </button>
             <button
-              v-if="task.status === 'SUCCEEDED'"
-              class="btn-post-process"
-              :disabled="processingTaskId === task.id"
-              title="TTS配音"
-              @click="postProcessTask(task, 'narrate')"
+              v-if="task.status === 'SUCCEEDED' || task.status === 'FAILED'"
+              class="btn-regenerate"
+              title="重新生成"
+              @click="regenerateTask(task)"
             >
-              {{ processingTaskId === task.id && processingType === 'narrate' ? '处理中...' : '配音' }}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 4v6h6"/><path d="M3.5 16.5A9 9 0 107.6 6.4"/>
+              </svg>
             </button>
             <button
               class="btn-delete-task"
@@ -217,6 +230,11 @@
             <label class="form-label">时长</label>
             <div class="duration-input-row">
               <button
+                :class="{ active: duration === 2 }"
+                class="btn-option"
+                @click="duration = 2"
+              >2秒</button>
+              <button
                 :class="{ active: duration === 5 }"
                 class="btn-option"
                 @click="duration = 5"
@@ -236,7 +254,7 @@
                   type="number"
                   class="duration-input"
                   :value="duration"
-                  min="4"
+                  min="2"
                   max="12"
                   step="1"
                   @input="onDurationInput"
@@ -296,6 +314,28 @@
 
       <!-- Storyboard mode -->
       <template v-if="mode === 'storyboard'">
+        <!-- Saved storyboards list (shown when no active storyboard) -->
+        <div v-if="shots.length === 0 && savedStoryboards.length > 0" class="storyboard-section">
+          <div class="vgp-section-title sb-list-header" @click="sbListCollapsed = !sbListCollapsed">
+            <span>已保存的分镜 ({{ savedStoryboards.length }})</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              class="collapse-chevron" :class="{ collapsed: sbListCollapsed }">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <div v-if="!sbListCollapsed" class="saved-sb-list">
+            <div v-for="sb in savedStoryboards.slice().reverse()" :key="sb.id" class="saved-sb-item" @click="selectStoryboard(sb)">
+              <div class="saved-sb-title">{{ sb.title }}</div>
+              <div class="saved-sb-meta">{{ sb.shotCount || 0 }}个镜头 · {{ sb.createdAt?.substring(0, 10) || '' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active storyboard: back button -->
+        <div v-if="shots.length > 0 && savedStoryboards.length > 1" class="sb-back-row">
+          <button class="btn-back-sb" @click="resetStoryboard()">← 返回分镜列表</button>
+        </div>
+
         <!-- Phase 1: Input idea -->
         <div class="storyboard-section">
           <div class="vgp-section-title">视频创意</div>
@@ -360,7 +400,7 @@
                 <option value="跟镜">跟镜</option>
                 <option value="升降">升降</option>
               </select>
-              <input type="number" v-model.number="shot.duration" class="shot-dur-input" min="4" max="12" />
+              <input type="number" v-model.number="shot.duration" class="shot-dur-input" min="2" max="12" />
               <div class="col-actions">
                 <button class="btn-shot-action" title="上移" :disabled="i === 0" @click="moveShot(i, -1)">↑</button>
                 <button class="btn-shot-action" title="下移" :disabled="i === shots.length - 1" @click="moveShot(i, 1)">↓</button>
@@ -452,6 +492,20 @@
               <span>正在合并视频，请稍候...</span>
             </div>
             <video v-if="mergedVideoUrl" :src="mergedVideoUrl" controls autoplay class="merged-video-player"></video>
+            <div v-if="mergedVideoUrl" class="merged-actions">
+              <a class="btn-download-merged" :href="mergedVideoUrl" :download="(storyboardTitle || '分镜') + '-合并.mp4'" title="下载合并视频" @click.stop>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                下载
+              </a>
+              <button class="btn-remerge" :disabled="merging" @click="remergeVideos">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 4v6h6"/><path d="M3.5 16.5A9 9 0 107.6 6.4"/>
+                </svg>
+                {{ merging ? '合并中...' : '重新合并（含字幕）' }}
+              </button>
+            </div>
           </div>
 
           <!-- Individual mode: per-shot status -->
@@ -461,6 +515,23 @@
               <span :class="'shot-status-badge status-' + (shot.status || 'PENDING').toLowerCase()">{{ shot.status || 'PENDING' }}</span>
               <button v-if="shot.status === 'PENDING'" class="btn-shot-submit" @click="submitSingleShot(i)">生成此镜</button>
               <button v-if="shot.status === 'SUCCEEDED'" class="btn-shot-play" @click="playShotVideo(i)">播放</button>
+              <a v-if="shot.status === 'SUCCEEDED' && shot.taskId" class="btn-shot-download"
+                :href="getTaskVideoUrl(shot.taskId)"
+                :download="(storyboardTitle || '分镜') + '-镜头' + (i+1) + '.mp4'"
+                title="下载" @click.stop>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+              </a>
+              <button v-if="shot.status === 'SUCCEEDED' || shot.status === 'FAILED'" class="btn-shot-regenerate"
+                title="重新生成" @click="regenerateShot(i)">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 4v6h6"/><path d="M3.5 16.5A9 9 0 107.6 6.4"/>
+                </svg>
+              </button>
+              <button v-if="shot.status === 'SUCCEEDED'" class="btn-shot-subtitle" @click="openShotSubtitleEditor(i)" :disabled="processingTaskId === shot.taskId">
+                {{ processingTaskId === shot.taskId ? '处理中...' : '字幕' }}
+              </button>
             </div>
           </div>
 
@@ -525,6 +596,124 @@
         </div>
       </div>
     </div>
+
+    <!-- Subtitle editor modal -->
+    <div v-if="showSubtitleEditor" class="modal-overlay" @click.self="showSubtitleEditor = false">
+      <div class="translate-modal" style="max-width: 560px; max-height: 80vh; overflow-y: auto;">
+        <div class="translate-modal-header">
+          <span>字幕编辑</span>
+          <button class="btn-icon-sm" @click="showSubtitleEditor = false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="subtitle-editor-body">
+          <!-- Enable subtitle toggle -->
+          <label class="subtitle-toggle-row">
+            <span>嵌入字幕</span>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="customSubtitlesEnabled" />
+              <span class="toggle-slider"></span>
+            </label>
+          </label>
+
+          <!-- Subtitle entries (shown when enabled) -->
+          <div v-if="customSubtitlesEnabled" class="subtitle-entries">
+            <div v-for="(entry, i) in customSubtitleEntries" :key="i" class="subtitle-entry">
+              <div class="subtitle-entry-header">
+                <span class="entry-index">字幕 {{ i + 1 }}</span>
+                <button class="btn-remove-entry" @click="removeSubtitleEntry(i)" title="删除">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="entry-time-row">
+                <input type="number" v-model.number="entry.startSec" class="entry-time" step="0.1" min="0" placeholder="0.0" />
+                <span class="time-sep">-</span>
+                <input type="number" v-model.number="entry.endSec" class="entry-time" step="0.1" min="0" placeholder="0.0" />
+                <span class="time-unit">秒</span>
+              </div>
+              <input type="text" v-model="entry.text" class="entry-text" placeholder="字幕文字..." />
+            </div>
+            <button class="btn-add-subtitle" @click="addSubtitleEntry">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              添加字幕
+            </button>
+          </div>
+
+          <!-- Narrate toggle -->
+          <label class="subtitle-toggle-row" style="margin-top: 12px;">
+            <span>TTS 配音</span>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="subtitleEditorNarrate" />
+              <span class="toggle-slider"></span>
+            </label>
+          </label>
+        </div>
+        <div class="translate-actions">
+          <button class="btn-cancel" @click="showSubtitleEditor = false">取消</button>
+          <button class="btn-replace" @click="saveSubtitles" :disabled="processingTaskId === subtitleEditTask?.id">
+            {{ processingTaskId === subtitleEditTask?.id ? '处理中...' : '保存并处理' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Regenerate modal -->
+    <div v-if="showRegenerateModal" class="modal-overlay" @click.self="showRegenerateModal = false">
+      <div class="translate-modal regen-resizable">
+        <div class="translate-modal-header">
+          <span>重新生成</span>
+          <button class="btn-icon-sm" @click="showRegenerateModal = false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="regen-body">
+          <div class="form-group">
+            <label class="form-label">提示词</label>
+            <textarea v-model="regenPrompt" class="form-textarea" rows="3" placeholder="描述你想要的视频内容..."></textarea>
+          </div>
+          <div class="form-row">
+            <label class="form-label">时长</label>
+            <div class="btn-group">
+              <button :class="{ active: regenDuration === 2 }" class="btn-option" @click="regenDuration = 2">2秒</button>
+              <button :class="{ active: regenDuration === 5 }" class="btn-option" @click="regenDuration = 5">5秒</button>
+              <button :class="{ active: regenDuration === 10 }" class="btn-option" @click="regenDuration = 10">10秒</button>
+              <button :class="{ active: regenDuration === 12 }" class="btn-option" @click="regenDuration = 12">12秒</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label">比例</label>
+            <div class="btn-group">
+              <button v-for="r in ratios" :key="r" :class="{ active: regenRatio === r }" class="btn-option" @click="regenRatio = r">{{ r }}</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label">生成音频</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="regenAudio" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">排除内容（反向提示词）</label>
+            <input type="text" v-model="regenNegative" class="input-custom-negative" placeholder="输入想排除的内容，逗号分隔..." />
+          </div>
+        </div>
+        <div class="translate-actions">
+          <button class="btn-cancel" @click="showRegenerateModal = false">取消</button>
+          <button class="btn-replace" :disabled="!regenPrompt.trim() || regenSubmitting" @click="submitRegenerate">
+            {{ regenSubmitting ? '提交中...' : '开始生成' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -550,6 +739,18 @@ const processingType = ref(null) // 'subtitle' | 'narrate'
 const tasksCollapsed = ref(true)
 const customSubtitlesEnabled = ref(false)
 const customSubtitleEntries = ref([])  // [{startSec, endSec, text}]
+const showSubtitleEditor = ref(false)
+const subtitleEditTask = ref(null)
+const subtitleEditorNarrate = ref(false)
+
+// Regenerate modal state
+const showRegenerateModal = ref(false)
+const regenPrompt = ref('')
+const regenDuration = ref(5)
+const regenRatio = ref('16:9')
+const regenAudio = ref(true)
+const regenNegative = ref('')
+const regenSubmitting = ref(false)
 const showAdvanced = ref(true)
 const submitting = ref(false)
 const tasks = ref([])
@@ -568,6 +769,7 @@ const storyboardId = ref(null)
 const savingSb = ref(false)
 const submittingSb = ref(false)
 const savedStoryboards = ref([])
+const sbListCollapsed = ref(true)
 const showShotDetail = ref(null)  // index of expanded shot, or null
 const resultDisplayMode = ref('individual')  // 'individual' | 'merged'
 const merging = ref(false)
@@ -616,17 +818,30 @@ function onDurationFocus(e) {
 
 onMounted(async () => {
   await loadTasks()
+  loadSavedStoryboardList()
   loadTemplates()
   startPolling()
 })
 
 async function loadTasks() {
   try {
+    let allTasks
     if (props.conversationId) {
-      tasks.value = await api.getConversationVideoTasks(props.conversationId)
+      allTasks = await api.getConversationVideoTasks(props.conversationId)
     } else {
-      tasks.value = await api.getVideoGenTasks()
+      allTasks = await api.getVideoGenTasks()
     }
+    // Sync storyboard shot statuses from tasks
+    for (const shot of shots.value) {
+      if (shot.taskId) {
+        const task = allTasks.find(t => t.id === shot.taskId)
+        if (task) {
+          shot.status = task.status
+        }
+      }
+    }
+    // Separate: storyboard_id != null → storyboard task, null → single-shot task
+    tasks.value = allTasks.filter(t => !t.storyboardId)
   } catch (e) {
     console.warn('Failed to load video tasks', e)
   }
@@ -652,6 +867,75 @@ async function postProcessTask(task, type) {
   }
 }
 
+// ── Subtitle editor ──
+
+function openSubtitleEditor(task) {
+  subtitleEditTask.value = task
+  customSubtitlesEnabled.value = task.subtitleEnabled !== false
+  subtitleEditorNarrate.value = task.narrateSubtitles === true
+  // Parse existing custom subtitles or create default entries based on duration
+  if (task.customSubtitles) {
+    try {
+      customSubtitleEntries.value = typeof task.customSubtitles === 'string'
+        ? JSON.parse(task.customSubtitles)
+        : task.customSubtitles
+    } catch {
+      customSubtitleEntries.value = buildDefaultEntries(task.duration || 5)
+    }
+  } else {
+    customSubtitleEntries.value = buildDefaultEntries(task.duration || 5)
+  }
+  showSubtitleEditor.value = true
+}
+
+function buildDefaultEntries(duration) {
+  return [{ startSec: 0, endSec: Math.min(duration || 5, 12), text: '' }]
+}
+
+function addSubtitleEntry() {
+  const last = customSubtitleEntries.value[customSubtitleEntries.value.length - 1]
+  const start = last ? last.endSec : 0
+  customSubtitleEntries.value.push({
+    startSec: start,
+    endSec: Math.min(start + 2, subtitleEditTask.value?.duration || 12),
+    text: ''
+  })
+}
+
+function removeSubtitleEntry(index) {
+  customSubtitleEntries.value.splice(index, 1)
+}
+
+async function saveSubtitles() {
+  const task = subtitleEditTask.value
+  if (!task || processingTaskId.value) return
+  processingTaskId.value = task.id
+  processingType.value = 'subtitle'
+  try {
+    const validEntries = customSubtitlesEnabled.value
+      ? customSubtitleEntries.value.filter(e => e.text.trim())
+      : []
+    await api.postProcessVideo(task.id, {
+      subtitleEnabled: customSubtitlesEnabled.value,
+      narrateSubtitles: subtitleEditorNarrate.value,
+      customSubtitles: validEntries
+    })
+    showSubtitleEditor.value = false
+    emit('toast', { message: '字幕处理完成', type: 'success' })
+    await loadTasks()
+  } catch (e) {
+    emit('toast', { message: '字幕处理失败: ' + e.message, type: 'error' })
+  } finally {
+    processingTaskId.value = null
+    processingType.value = null
+  }
+}
+
+function getTaskVideoUrl(taskId) {
+  const token = localStorage.getItem('token')
+  return `/api/video-gen/tasks/${taskId}/video${token ? '?token=' + token : ''}`
+}
+
 onUnmounted(() => {
   stopPolling()
 })
@@ -674,9 +958,8 @@ function statusLabel(status) {
 function startPolling() {
   stopPolling()
   pollTimer = setInterval(async () => {
+    // 1. Poll single-shot tasks
     const pendingTasks = tasks.value.filter(t => isPending(t.status))
-    if (pendingTasks.length === 0) return
-
     for (const task of pendingTasks) {
       try {
         const updated = await api.getVideoGenTask(task.id)
@@ -686,6 +969,17 @@ function startPolling() {
         }
       } catch (e) {
         console.warn('Poll failed for task', task.id, e)
+      }
+    }
+    // 2. Poll storyboard shot tasks
+    for (const shot of shots.value) {
+      if (shot.taskId && isPending(shot.status)) {
+        try {
+          const updated = await api.getVideoGenTask(shot.taskId)
+          shot.status = updated.status
+        } catch (e) {
+          console.warn('Poll failed for shot task', shot.taskId, e)
+        }
       }
     }
   }, 2000)
@@ -759,17 +1053,6 @@ function onFileChange(e) {
 function removeFirstFrame() {
   firstFramePreview.value = null
   firstFrameBase64.value = null
-}
-
-function addSubtitleEntry() {
-  const last = customSubtitleEntries.value[customSubtitleEntries.value.length - 1]
-  const startSec = last ? last.endSec : 0
-  const endSec = Math.min(startSec + 2, duration.value)
-  customSubtitleEntries.value.push({ startSec, endSec, text: '' })
-}
-
-function removeSubtitleEntry(index) {
-  customSubtitleEntries.value.splice(index, 1)
 }
 
 // ── Prompt engineering methods ──
@@ -858,6 +1141,56 @@ function toggleNegativeTag(tag) {
 
 // ── Storyboard methods ──
 
+async function loadSavedStoryboardList() {
+  if (!props.conversationId) return
+  try {
+    savedStoryboards.value = await api.getStoryboards(props.conversationId) || []
+  } catch (e) {
+    console.warn('Failed to load saved storyboards', e)
+  }
+}
+
+function resetStoryboard() {
+  storyboardId.value = null
+  storyboardTitle.value = ''
+  storyboardIdea.value = ''
+  shotCount.value = 5
+  shots.value = []
+  mergedVideoUrl.value = null
+}
+
+async function selectStoryboard(sb) {
+  try {
+    const data = await api.getStoryboard(sb.id)
+    if (!data || !data.shots) return
+    const storyboard = data.storyboard || data
+    storyboardId.value = storyboard.id || sb.id
+    storyboardTitle.value = storyboard.title || ''
+    storyboardIdea.value = storyboard.idea || ''
+    shotCount.value = storyboard.shotCount || data.shots.length
+    shots.value = data.shots.map(s => ({
+      ...s,
+      status: s.status || 'PENDING',
+      taskId: s.taskId || null
+    }))
+    // Sync statuses from current tasks
+    for (const shot of shots.value) {
+      if (shot.taskId) {
+        const task = tasks.value.find(t => t.id === shot.taskId)
+        if (task) shot.status = task.status
+      }
+    }
+    // Restore merged video URL if shots have succeeded
+    if (shots.value.some(s => s.status === 'SUCCEEDED')) {
+      mergedVideoUrl.value = api.getMergedVideoUrl(storyboardId.value)
+    } else {
+      mergedVideoUrl.value = null
+    }
+  } catch (e) {
+    emit('toast', { message: '加载分镜失败', type: 'error' })
+  }
+}
+
 async function generateStoryboard() {
   if (!storyboardIdea.value.trim() || generating.value) return
   generating.value = true
@@ -905,6 +1238,7 @@ async function saveStoryboard() {
         taskId: shots.value[i]?.taskId || null
       }))
     }
+    loadSavedStoryboardList()  // Refresh the list
     emit('toast', { message: '分镜已保存', type: 'success' })
   } catch (e) {
     emit('toast', { message: '保存失败: ' + e.message, type: 'error' })
@@ -987,16 +1321,97 @@ async function submitSingleShot(index) {
     await loadTasks()
   } catch (e) {
     emit('toast', { message: '提交失败: ' + e.message, type: 'error' })
+  } finally {
+    regenSubmitting.value = false
   }
 }
 
-function playShotVideo(index) {
+async function playShotVideo(index) {
   const shot = shots.value[index]
-  if (shot && shot.taskId) {
-    const task = tasks.value.find(t => t.id === shot.taskId)
+  if (!shot || !shot.taskId) return
+  try {
+    const task = await api.getVideoGenTask(shot.taskId)
     if (task) {
-      emit('play', task)
+      shot.status = task.status
+      if (task.status === 'SUCCEEDED') {
+        emit('play', task)
+      } else {
+        emit('toast', { message: '视频尚未生成完成', type: 'error' })
+      }
     }
+  } catch (e) {
+    emit('toast', { message: '获取视频失败', type: 'error' })
+  }
+}
+
+async function openShotSubtitleEditor(index) {
+  const shot = shots.value[index]
+  if (!shot || !shot.taskId) return
+  try {
+    const task = await api.getVideoGenTask(shot.taskId)
+    if (task) {
+      shot.status = task.status
+      openSubtitleEditor(task)
+    }
+  } catch (e) {
+    emit('toast', { message: '获取任务失败', type: 'error' })
+  }
+}
+
+// ── Regenerate ──
+
+function regenerateTask(task) {
+  regenPrompt.value = task.prompt || ''
+  regenDuration.value = task.duration || 5
+  regenRatio.value = task.aspectRatio || '16:9'
+  regenAudio.value = task.generateAudio !== false
+  regenNegative.value = task.negativePrompt || ''
+  showRegenerateModal.value = true
+}
+
+async function regenerateShot(index) {
+  const shot = shots.value[index]
+  if (!shot) return
+  regenPrompt.value = shot.shotDescription || ''
+  regenDuration.value = shot.duration || 5
+  regenRatio.value = aspectRatio.value
+  regenAudio.value = generateAudio.value
+  regenNegative.value = ''
+  if (shot.taskId) {
+    try {
+      const task = await api.getVideoGenTask(shot.taskId)
+      if (task) {
+        regenPrompt.value = task.prompt || shot.shotDescription || ''
+        regenDuration.value = task.duration || shot.duration || 5
+        regenRatio.value = task.aspectRatio || aspectRatio.value
+        regenAudio.value = task.generateAudio !== false
+        regenNegative.value = task.negativePrompt || ''
+      }
+    } catch { /* use shot defaults */ }
+  }
+  showRegenerateModal.value = true
+}
+
+async function submitRegenerate() {
+  if (!regenPrompt.value.trim() || regenSubmitting.value) return
+  regenSubmitting.value = true
+  try {
+    const task = await api.submitVideoGen({
+      prompt: regenPrompt.value.trim(),
+      duration: regenDuration.value,
+      aspectRatio: regenRatio.value,
+      seed: -1,
+      generateAudio: regenAudio.value,
+      negativePrompt: regenNegative.value || null
+    })
+    showRegenerateModal.value = false
+    emit('toast', { message: '已提交重新生成', type: 'success' })
+    emit('videoSubmitted', task)
+    await loadTasks()
+  } catch (e) {
+    emit('toast', { message: '提交失败: ' + e.message, type: 'error' })
+  } finally {
+    regenSubmitting.value = false
   }
 }
 
@@ -1013,6 +1428,11 @@ async function mergeVideos() {
   } finally {
     merging.value = false
   }
+}
+
+async function remergeVideos() {
+  mergedVideoUrl.value = null
+  await mergeVideos()
 }
 </script>
 
@@ -1057,7 +1477,7 @@ async function mergeVideos() {
   margin-bottom: 10px;
 }
 
-.task-list-header {
+.task-list-header, .sb-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1067,7 +1487,7 @@ async function mergeVideos() {
   border-radius: 4px;
   transition: color 0.15s;
 }
-.task-list-header:hover {
+.task-list-header:hover, .sb-list-header:hover {
   color: var(--text-secondary);
 }
 
@@ -1168,6 +1588,15 @@ async function mergeVideos() {
 .btn-play:hover {
   opacity: 0.85;
 }
+
+.btn-download, .btn-regenerate {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--border-color); border-radius: 6px;
+  color: var(--text-secondary); text-decoration: none; cursor: pointer;
+  background: transparent;
+}
+.btn-download:hover, .btn-regenerate:hover { color: var(--accent); border-color: var(--accent); }
 
 .btn-post-process {
   padding: 2px 8px;
@@ -1408,6 +1837,17 @@ async function mergeVideos() {
 }
 
 /* ── Custom subtitle editor ── */
+.subtitle-editor-body { padding: 8px 0; }
+.regen-resizable {
+  width: auto; max-width: 90vw; max-height: 90vh;
+  min-width: 400px; min-height: 300px;
+  resize: both; overflow: auto;
+}
+.regen-body { padding: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.subtitle-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-size: 13px; color: var(--text);
+}
 .custom-subtitles-editor {
   padding: 10px;
   background: var(--bg-card);
@@ -1876,6 +2316,22 @@ async function mergeVideos() {
 }
 .btn-save-sb:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Saved storyboards list */
+.saved-sb-list { display: flex; flex-direction: column; gap: 6px; }
+.saved-sb-item {
+  padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px;
+  cursor: pointer; transition: background 0.15s;
+}
+.saved-sb-item:hover { background: var(--bg-secondary); }
+.saved-sb-title { font-size: 14px; font-weight: 500; color: var(--text); }
+.saved-sb-meta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.sb-back-row { margin-bottom: 8px; }
+.btn-back-sb {
+  background: none; border: none; color: var(--text-secondary); font-size: 12px;
+  cursor: pointer; padding: 4px 0;
+}
+.btn-back-sb:hover { color: var(--text); }
+
 .shot-table { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
 .shot-table-header {
   display: grid; grid-template-columns: 40px 1fr 80px 60px 80px 24px; gap: 6px;
@@ -1925,6 +2381,20 @@ async function mergeVideos() {
   background: transparent; color: var(--accent); font-size: 11px; cursor: pointer;
 }
 .btn-shot-submit:hover, .btn-shot-play:hover { background: var(--accent); color: #fff; }
+.btn-shot-subtitle {
+  padding: 3px 10px; border: 1px solid var(--accent); border-radius: 4px;
+  background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; margin-left: 4px;
+}
+.btn-shot-subtitle:hover { background: var(--accent); color: #fff; }
+.btn-shot-subtitle:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-shot-download, .btn-shot-regenerate {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; margin-left: 4px;
+  border: 1px solid var(--border-color); border-radius: 4px;
+  color: var(--text-secondary); text-decoration: none; cursor: pointer;
+  background: transparent;
+}
+.btn-shot-download:hover, .btn-shot-regenerate:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── Expandable shot details ── */
 .btn-shot-expand { padding: 2px 4px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; }
@@ -1985,4 +2455,18 @@ async function mergeVideos() {
 .merged-hint { font-size: 11px; color: var(--text-secondary); text-align: center; margin-top: 4px; }
 .merging-status { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 20px; color: var(--text-secondary); font-size: 14px; }
 .merged-video-player { width: 100%; max-height: 400px; border-radius: 8px; margin-top: 8px; background: #000; }
+.merged-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.btn-download-merged {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 14px; border: 1px solid var(--border-color); border-radius: 6px;
+  color: var(--text-secondary); text-decoration: none; font-size: 12px; cursor: pointer;
+}
+.btn-download-merged:hover { color: var(--accent); border-color: var(--accent); }
+.btn-remerge {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 14px; border: 1px dashed var(--accent); border-radius: 6px;
+  background: transparent; color: var(--accent); font-size: 12px; cursor: pointer;
+}
+.btn-remerge:hover { background: var(--accent); color: #fff; }
+.btn-remerge:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
