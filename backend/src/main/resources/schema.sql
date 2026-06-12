@@ -72,3 +72,14 @@ CREATE TABLE IF NOT EXISTS video_gen_tasks (
     INDEX idx_vgt_user_id (user_id),
     INDEX idx_vgt_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS video_prompt_templates (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(50) DEFAULT 'general',
+    sort_order INT DEFAULT 0,
+    is_preset BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

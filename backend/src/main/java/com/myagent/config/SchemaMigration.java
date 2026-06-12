@@ -103,6 +103,47 @@ public class SchemaMigration implements ApplicationRunner {
                 "ALTER TABLE video_gen_tasks ADD COLUMN narrate_subtitles BOOLEAN NOT NULL DEFAULT FALSE");
         addColumnIfMissing("video_gen_tasks", "custom_subtitles",
                 "ALTER TABLE video_gen_tasks ADD COLUMN custom_subtitles TEXT NULL DEFAULT NULL");
+
+        // ── Video prompt templates table ──
+        jdbcTemplate.execute(
+            "CREATE TABLE IF NOT EXISTS video_prompt_templates (" +
+            "  id VARCHAR(36) PRIMARY KEY," +
+            "  name VARCHAR(100) NOT NULL," +
+            "  content TEXT NOT NULL," +
+            "  category VARCHAR(50) DEFAULT 'general'," +
+            "  sort_order INT DEFAULT 0," +
+            "  is_preset BOOLEAN NOT NULL DEFAULT FALSE," +
+            "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+            "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // Seed preset templates only if table is empty
+        Integer templateCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM video_prompt_templates", Integer.class);
+        if (templateCount != null && templateCount == 0) {
+            String[][] presets = {
+                {"电影大片", "cinematic",
+                 "Cinematic masterpiece, shallow depth of field, golden hour lighting, 8K quality, anamorphic lens, film grain texture, dramatic color grading, slow motion camera movement, epic composition"},
+                {"日系动漫", "anime",
+                 "Studio Ghibli inspired animation style, vibrant cel shading, soft pastel color palette, gentle breeze animating hair and clothing, dreamlike atmosphere, cherry blossom petals floating, warm sunlight streaming through leaves"},
+                {"商业广告", "commercial",
+                 "Professional product commercial shot, studio lighting setup, clean minimalist background, 60fps smooth slow motion, macro lens capturing fine details, elegant presentation, premium quality feel"},
+                {"写实纪录片", "realistic",
+                 "Photorealistic documentary style, natural ambient lighting, handheld camera with subtle movement, shallow depth of field on subject, detailed textures and imperfections, authentic atmosphere"},
+                {"国风美学", "chinese",
+                 "中国古典风格，水墨意境，留白构图，丝绸飘动，烟雾缭绕，金色与朱红色调，意境深远，含蓄典雅，如诗如画"},
+                {"赛博朋克", "cyberpunk",
+                 "Cyberpunk cityscape at night, neon lights reflecting on wet streets, holographic advertisements flickering, volumetric fog rolling through alleyways, blue and magenta color palette, high contrast lighting, rain droplets"}
+            };
+            for (int i = 0; i < presets.length; i++) {
+                jdbcTemplate.update(
+                    "INSERT INTO video_prompt_templates (id, name, content, category, sort_order, is_preset, created_at, updated_at) " +
+                    "VALUES (?, ?, ?, ?, ?, TRUE, NOW(), NOW())",
+                    java.util.UUID.randomUUID().toString(),
+                    presets[i][0], presets[i][1], presets[i][2], i);
+            }
+            log.info("Schema migration: seeded {} video prompt templates", presets.length);
+        }
     }
 
     private void addColumnIfMissing(String table, String column, String alterSql) {
