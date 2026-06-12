@@ -106,7 +106,23 @@ public class StoryboardController {
             result.put("id", saved.getId());
             result.put("title", saved.getTitle());
             result.put("shotCount", shots.size());
-            result.put("shots", shotsData);
+            // Return actual saved shots with DB-assigned IDs
+            List<Map<String, Object>> savedShots = shots.stream().map(s -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id", s.getId());
+                m.put("storyboardId", s.getStoryboardId());
+                m.put("sceneNumber", s.getSceneNumber());
+                m.put("sceneNote", s.getSceneNote());
+                m.put("shotDescription", s.getShotDescription());
+                m.put("cameraMovement", s.getCameraMovement());
+                m.put("duration", s.getDuration());
+                m.put("audioHint", s.getAudioHint());
+                m.put("sortOrder", s.getSortOrder());
+                m.put("status", s.getStatus());
+                m.put("taskId", s.getTaskId());
+                return m;
+            }).toList();
+            result.put("shots", savedShots);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             log.error("Failed to save storyboard", e);
@@ -217,6 +233,8 @@ public class StoryboardController {
             return ResponseEntity.notFound().build();
         } catch (SecurityException e) {
             return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
