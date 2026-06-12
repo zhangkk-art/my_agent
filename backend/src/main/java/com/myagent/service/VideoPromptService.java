@@ -8,12 +8,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.UUID;
 
 @Service
 public class VideoPromptService {
 
     private static final Logger log = LoggerFactory.getLogger(VideoPromptService.class);
+
+    private static final String DEFAULT_CATEGORY = "custom";
+    private static final int DEFAULT_SORT_ORDER = 100;
 
     private final ChatClientRegistry clientRegistry;
     private final VideoPromptTemplateMapper templateMapper;
@@ -49,12 +55,12 @@ public class VideoPromptService {
                 - 直接输出最终提示词，不要解释
                 - 同时给出 3-5 个建议的反向提示词（逗号分隔），放在 [NEGATIVE] 标记之后
 
-                用户输入：%s
+                用户输入：{USER_PROMPT}
 
                 输出格式：
                 {增强后的提示词}
                 [NEGATIVE] {反向提示词1}, {反向提示词2}, ...
-                """.formatted(userPrompt);
+                """.replace("{USER_PROMPT}", userPrompt);
 
         try {
             String raw = clientRegistry.getDefault().prompt()
@@ -136,8 +142,8 @@ public class VideoPromptService {
         t.setId(UUID.randomUUID().toString());
         t.setName(name);
         t.setContent(content);
-        t.setCategory(category != null ? category : "custom");
-        t.setSortOrder(100);
+        t.setCategory(category != null ? category : DEFAULT_CATEGORY);
+        t.setSortOrder(DEFAULT_SORT_ORDER);
         t.setIsPreset(false);
         t.setCreatedAt(java.time.LocalDateTime.now());
         t.setUpdatedAt(java.time.LocalDateTime.now());
