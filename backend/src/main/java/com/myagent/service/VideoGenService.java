@@ -102,6 +102,10 @@ public class VideoGenService {
                 log.error("Failed to serialize custom subtitles", e);
             }
         }
+        // Store negative prompt tags
+        if (request.getNegativePrompt() != null && !request.getNegativePrompt().isBlank()) {
+            task.setNegativePrompt(request.getNegativePrompt());
+        }
         task.setStatus("PENDING");
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
@@ -129,7 +133,12 @@ public class VideoGenService {
                 prompt = prompt.substring(0, 500);
                 log.warn("Prompt truncated to 500 chars for task {}", task.getId());
             }
-            textPart.put("text", prompt);
+            // Append negative prompt as suffix if present
+            String fullPrompt = prompt;
+            if (request.getNegativePrompt() != null && !request.getNegativePrompt().isBlank()) {
+                fullPrompt = prompt + "。Avoid: " + request.getNegativePrompt();
+            }
+            textPart.put("text", fullPrompt);
             content.add(textPart);
 
             Map<String, Object> body = new LinkedHashMap<>();

@@ -14,6 +14,7 @@ public class VideoGenRequest {
     private Boolean generateAudio = true;       // whether to generate synchronized audio (1.5 pro)
     private Boolean narrateSubtitles = false;    // TTS voice reading subtitle text into video
     private List<SubtitleEntry> customSubtitles;  // user-defined subtitle entries with timing
+    private String negativePrompt;     // negative prompt, comma-separated tags
 
     public VideoGenRequest() {}
 
@@ -46,4 +47,7 @@ public class VideoGenRequest {
 
     public List<SubtitleEntry> getCustomSubtitles() { return customSubtitles; }
     public void setCustomSubtitles(List<SubtitleEntry> customSubtitles) { this.customSubtitles = customSubtitles; }
+
+    public String getNegativePrompt() { return negativePrompt; }
+    public void setNegativePrompt(String negativePrompt) { this.negativePrompt = negativePrompt; }
 }

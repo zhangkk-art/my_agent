@@ -27,6 +27,7 @@ public class VideoGenTask {
     private Boolean generateAudio;
     private Boolean narrateSubtitles;
     private String customSubtitles;  // JSON array of SubtitleEntry for user-defined subtitles
+    private String negativePrompt;   // negative prompt tags, comma-separated
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -86,6 +87,9 @@ public class VideoGenTask {
 
     public String getCustomSubtitles() { return customSubtitles; }
     public void setCustomSubtitles(String customSubtitles) { this.customSubtitles = customSubtitles; }
+
+    public String getNegativePrompt() { return negativePrompt; }
+    public void setNegativePrompt(String negativePrompt) { this.negativePrompt = negativePrompt; }
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }

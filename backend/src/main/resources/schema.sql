@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS video_gen_tasks (
     original_video_url TEXT,
     subtitle_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     subtitle_path VARCHAR(512) NULL DEFAULT NULL,
+    negative_prompt TEXT NULL DEFAULT NULL,
     error_message TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
