@@ -327,8 +327,8 @@
           </div>
         </div>
 
-        <!-- Phase 2: Edit storyboard -->
-        <div v-if="shots.length > 0" class="storyboard-section">
+        <!-- Phase 2: Edit storyboard (hidden in merged mode) -->
+        <div v-if="shots.length > 0 && resultDisplayMode !== 'merged'" class="storyboard-section">
           <div class="sb-title-row">
             <input v-model="storyboardTitle" class="sb-title-input" placeholder="分镜标题..." />
             <button class="btn-save-sb" :disabled="savingSb || !storyboardTitle.trim()" @click="saveStoryboard">
@@ -393,16 +393,16 @@
 
         <!-- Phase 3: Submit settings (reuse existing advanced settings) -->
         <div v-if="shots.length > 0" class="storyboard-section">
-          <div class="vgp-section-title">生成设置</div>
+          <div v-if="resultDisplayMode !== 'merged'" class="vgp-section-title">生成设置</div>
 
-          <div class="form-row">
+          <div v-if="resultDisplayMode !== 'merged'" class="form-row">
             <label class="form-label">比例</label>
             <div class="btn-group">
               <button v-for="r in ratios" :key="r" :class="{ active: aspectRatio === r }" class="btn-option" @click="aspectRatio = r">{{ r }}</button>
             </div>
           </div>
 
-          <div class="form-row">
+          <div v-if="resultDisplayMode !== 'merged'" class="form-row">
             <label class="form-label">生成音频</label>
             <label class="toggle-switch">
               <input type="checkbox" v-model="generateAudio" />
@@ -410,7 +410,7 @@
             </label>
           </div>
 
-          <div class="negative-prompt-section">
+          <div v-if="resultDisplayMode !== 'merged'" class="negative-prompt-section">
             <label class="form-label">排除内容（反向提示词）</label>
             <div class="negative-tags">
               <button v-for="tag in negativeTagOptions" :key="tag" class="tag-negative" :class="{ selected: selectedNegativeTags.includes(tag) }" @click="toggleNegativeTag(tag)">{{ tag }}</button>
@@ -418,7 +418,7 @@
             <input type="text" v-model="customNegative" class="input-custom-negative" placeholder="输入想排除的内容，逗号分隔..." />
           </div>
 
-          <button class="btn-submit" :disabled="!shots.length || submittingSb" @click="submitAllShots">
+          <button v-if="resultDisplayMode !== 'merged'" class="btn-submit" :disabled="!shots.length || submittingSb" @click="submitAllShots">
             <svg v-if="submittingSb" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
               <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
             </svg>
