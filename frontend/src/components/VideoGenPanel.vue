@@ -94,6 +94,55 @@
           ></textarea>
         </div>
 
+        <!-- Prompt toolbar -->
+        <div class="prompt-toolbar">
+          <div class="toolbar-left">
+            <button class="btn-tool" :class="{ active: showTemplates }" title="模板" @click="toggleTemplates">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
+              </svg>
+              模板
+            </button>
+            <button class="btn-tool" :disabled="enhancing || !prompt.trim()" title="AI增强" @click="enhancePrompt">
+              <svg v-if="!enhancing" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+              {{ enhancing ? '增强中...' : '增强' }}
+            </button>
+            <div class="translate-wrapper">
+              <button class="btn-tool" :disabled="translating || !prompt.trim()" title="翻译" @click="toggleTranslateMenu">
+                <svg v-if="!translating" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/>
+                </svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                </svg>
+                翻译
+              </button>
+              <div v-if="showTranslateMenu" class="translate-menu">
+                <button @click="doTranslate('zh')">译为中文</button>
+                <button @click="doTranslate('en')">译为英文</button>
+                <button @click="doTranslate('auto')">统一润色</button>
+              </div>
+            </div>
+          </div>
+          <span class="char-count">{{ prompt.length }}/500</span>
+        </div>
+
+        <!-- Template selector -->
+        <div v-if="showTemplates" class="template-selector">
+          <div class="template-chips">
+            <button v-for="t in templates" :key="t.id" class="chip-template" :class="{ preset: t.isPreset }" @click="selectTemplate(t)">{{ t.name }}</button>
+            <div class="template-add-row">
+              <input v-model="newTemplateName" class="input-new-template" placeholder="新模板名称" />
+              <button class="btn-save-template" :disabled="!newTemplateName.trim() || !prompt.trim()" @click="saveCurrentAsTemplate">保存当前</button>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label class="form-label">首帧图片 (可选)</label>
           <div v-if="firstFramePreview" class="first-frame-preview">
@@ -205,6 +254,14 @@
             </label>
           </div>
 
+          <div class="negative-prompt-section">
+            <label class="form-label">排除内容（反向提示词）</label>
+            <div class="negative-tags">
+              <button v-for="tag in negativeTagOptions" :key="tag" class="tag-negative" :class="{ selected: selectedNegativeTags.includes(tag) }" @click="toggleNegativeTag(tag)">{{ tag }}</button>
+            </div>
+            <input type="text" v-model="customNegative" class="input-custom-negative" placeholder="输入想排除的内容，逗号分隔..." />
+          </div>
+
           <div v-if="customSubtitlesEnabled" class="custom-subtitles-editor">
             <div class="subtitle-entries">
               <div v-for="(entry, i) in customSubtitleEntries" :key="i" class="subtitle-entry">
@@ -246,11 +303,38 @@
         </button>
       </div>
     </div>
+    <!-- Translate confirmation modal -->
+    <div v-if="showTranslateModal" class="modal-overlay" @click.self="showTranslateModal = false">
+      <div class="translate-modal">
+        <div class="translate-modal-header">
+          <span>翻译结果</span>
+          <button class="btn-icon-sm" @click="showTranslateModal = false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="translate-columns">
+          <div class="translate-col">
+            <div class="translate-col-label">原文</div>
+            <div class="translate-col-text">{{ translateOriginal }}</div>
+          </div>
+          <div class="translate-col">
+            <div class="translate-col-label">译文</div>
+            <div class="translate-col-text">{{ translateResult }}</div>
+          </div>
+        </div>
+        <div class="translate-actions">
+          <button class="btn-cancel" @click="showTranslateModal = false">取消</button>
+          <button class="btn-replace" @click="applyTranslation">替换</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import * as api from '../api/index.js'
 
 const props = defineProps({
@@ -277,6 +361,31 @@ const fileInput = ref(null)
 
 const ratios = ['16:9', '9:16', '1:1']
 
+// ── Prompt engineering state ──
+const enhancing = ref(false)
+const translating = ref(false)
+const showTemplates = ref(false)
+const showTranslateMenu = ref(false)
+const showTranslateModal = ref(false)
+const translateOriginal = ref('')
+const translateResult = ref('')
+const targetLanguage = ref('auto')
+const templates = ref([])
+const newTemplateName = ref('')
+
+// Negative prompt state
+const negativeTagOptions = ['模糊', '畸变', '多余手指', '文字水印', '低画质', '画面撕裂', '闪烁']
+const selectedNegativeTags = ref([])
+const customNegative = ref('')
+
+const negativePrompt = computed(() => {
+  const parts = [...selectedNegativeTags.value]
+  if (customNegative.value.trim()) {
+    parts.push(...customNegative.value.split(/[,，]/).map(s => s.trim()).filter(Boolean))
+  }
+  return parts.join(', ')
+})
+
 let pollTimer = null
 
 function onDurationInput(e) {
@@ -293,6 +402,7 @@ function onDurationFocus(e) {
 
 onMounted(async () => {
   await loadTasks()
+  loadTemplates()
   startPolling()
 })
 
@@ -368,7 +478,8 @@ async function submitTask() {
       subtitleEnabled: subtitleEnabled.value,
       generateAudio: generateAudio.value,
       narrateSubtitles: narrateSubtitles.value,
-      customSubtitles: customSubtitlesEnabled.value ? customSubtitleEntries.value : null
+      customSubtitles: customSubtitlesEnabled.value ? customSubtitleEntries.value : null,
+      negativePrompt: negativePrompt.value || null
     })
     const fullTask = {
       ...task,
@@ -382,6 +493,8 @@ async function submitTask() {
     prompt.value = ''
     firstFramePreview.value = null
     firstFrameBase64.value = null
+    selectedNegativeTags.value = []
+    customNegative.value = ''
     emit('videoSubmitted', fullTask)
     emit('toast', { message: '视频任务已提交', type: 'success' })
   } catch (e) {
@@ -426,6 +539,90 @@ function addSubtitleEntry() {
 
 function removeSubtitleEntry(index) {
   customSubtitleEntries.value.splice(index, 1)
+}
+
+// ── Prompt engineering methods ──
+
+async function loadTemplates() {
+  try {
+    templates.value = await api.getVideoPromptTemplates()
+  } catch (e) {
+    console.warn('Failed to load video prompt templates', e)
+  }
+}
+
+function toggleTemplates() { showTemplates.value = !showTemplates.value }
+
+function selectTemplate(t) {
+  prompt.value = t.content
+  showTemplates.value = false
+  emit('toast', { message: '已选择模板: ' + t.name, type: 'info' })
+}
+
+async function saveCurrentAsTemplate() {
+  const name = newTemplateName.value.trim()
+  if (!name || !prompt.value.trim()) return
+  try {
+    const t = await api.createVideoPromptTemplate({ name, content: prompt.value, category: 'custom' })
+    templates.value.push(t)
+    newTemplateName.value = ''
+    emit('toast', { message: '模板已保存', type: 'success' })
+  } catch (e) {
+    emit('toast', { message: '保存模板失败: ' + e.message, type: 'error' })
+  }
+}
+
+async function enhancePrompt() {
+  if (!prompt.value.trim() || enhancing.value) return
+  enhancing.value = true
+  try {
+    const result = await api.enhanceVideoPrompt(prompt.value)
+    if (result.enhanced) prompt.value = result.enhanced
+    if (result.suggestedNegative) {
+      const suggestions = result.suggestedNegative.split(/[,，、]/).map(s => s.trim()).filter(Boolean)
+      for (const s of suggestions) {
+        const matched = negativeTagOptions.find(t => t.includes(s) || s.includes(t))
+        if (matched && !selectedNegativeTags.value.includes(matched)) selectedNegativeTags.value.push(matched)
+      }
+      const unmatched = suggestions.filter(s => !negativeTagOptions.some(t => t.includes(s) || s.includes(t)))
+      if (unmatched.length > 0) {
+        const existing = customNegative.value ? customNegative.value.split(/[,，]/).map(x => x.trim()) : []
+        customNegative.value = [...new Set([...existing, ...unmatched])].join(', ')
+      }
+    }
+    emit('toast', { message: '提示词已增强', type: 'success' })
+  } catch (e) {
+    emit('toast', { message: '增强失败: ' + e.message, type: 'error' })
+  } finally { enhancing.value = false }
+}
+
+function toggleTranslateMenu() { showTranslateMenu.value = !showTranslateMenu.value }
+
+async function doTranslate(target) {
+  showTranslateMenu.value = false
+  if (!prompt.value.trim() || translating.value) return
+  translating.value = true
+  targetLanguage.value = target
+  translateOriginal.value = prompt.value
+  try {
+    const result = await api.translateVideoPrompt(prompt.value, target)
+    translateResult.value = result.translated
+    showTranslateModal.value = true
+  } catch (e) {
+    emit('toast', { message: '翻译失败: ' + e.message, type: 'error' })
+  } finally { translating.value = false }
+}
+
+function applyTranslation() {
+  prompt.value = translateResult.value
+  showTranslateModal.value = false
+  emit('toast', { message: '已替换为译文', type: 'success' })
+}
+
+function toggleNegativeTag(tag) {
+  const idx = selectedNegativeTags.value.indexOf(tag)
+  if (idx >= 0) selectedNegativeTags.value.splice(idx, 1)
+  else selectedNegativeTags.value.push(tag)
 }
 </script>
 
@@ -981,4 +1178,242 @@ function removeSubtitleEntry(index) {
   background: white;
   transform: translateX(20px);
 }
+
+/* ── Prompt toolbar ── */
+.prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.btn-tool:hover:not(:disabled) {
+  background: var(--bg-card);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-tool.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.btn-tool:disabled { opacity: 0.4; cursor: not-allowed; }
+.char-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Translate dropdown ── */
+.translate-wrapper { position: relative; }
+.translate-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 20;
+  min-width: 100px;
+  overflow: hidden;
+}
+.translate-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.translate-menu button:hover { background: var(--bg-hover); }
+
+/* ── Template selector ── */
+.template-selector {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.template-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chip-template {
+  padding: 5px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.chip-template:hover { border-color: var(--accent); color: var(--accent); }
+.chip-template.preset { border-style: solid; }
+.template-add-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 8px;
+  width: 100%;
+}
+.input-new-template {
+  flex: 1;
+  padding: 5px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  min-width: 0;
+}
+.input-new-template:focus { border-color: var(--accent); }
+.btn-save-template {
+  padding: 5px 12px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-save-template:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Translate modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.translate-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.translate-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 14px;
+  font-weight: 600;
+}
+.translate-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 16px;
+}
+.translate-col-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.translate-col-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.translate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+}
+.btn-cancel {
+  padding: 7px 16px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.btn-replace {
+  padding: 7px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* ── Negative prompt ── */
+.negative-prompt-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+.negative-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tag-negative {
+  padding: 4px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  transition: all 0.15s;
+}
+.tag-negative:hover { border-color: var(--danger); color: var(--danger); }
+.tag-negative.selected {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.input-custom-negative {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+.input-custom-negative:focus { border-color: var(--accent); }
+.input-custom-negative::placeholder { color: var(--text-muted); }
 </style>
