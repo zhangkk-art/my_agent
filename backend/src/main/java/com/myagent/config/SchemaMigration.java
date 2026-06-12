@@ -146,6 +146,40 @@ public class SchemaMigration implements ApplicationRunner {
             }
             log.info("Schema migration: seeded {} video prompt templates", presets.length);
         }
+
+        // ── Storyboard tables ──
+        jdbcTemplate.execute(
+            "CREATE TABLE IF NOT EXISTS storyboards (" +
+            "  id VARCHAR(36) PRIMARY KEY," +
+            "  user_id VARCHAR(36) NOT NULL," +
+            "  conversation_id VARCHAR(36)," +
+            "  title VARCHAR(200) NOT NULL," +
+            "  idea TEXT NOT NULL," +
+            "  shot_count INT DEFAULT 5," +
+            "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+            "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
+            "  INDEX idx_sb_user (user_id)," +
+            "  INDEX idx_sb_conv (conversation_id)" +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        jdbcTemplate.execute(
+            "CREATE TABLE IF NOT EXISTS storyboard_shots (" +
+            "  id VARCHAR(36) PRIMARY KEY," +
+            "  storyboard_id VARCHAR(36) NOT NULL," +
+            "  scene_number INT NOT NULL," +
+            "  scene_note VARCHAR(200)," +
+            "  shot_description TEXT NOT NULL," +
+            "  camera_movement VARCHAR(50)," +
+            "  duration INT DEFAULT 5," +
+            "  audio_hint VARCHAR(200)," +
+            "  sort_order INT DEFAULT 0," +
+            "  status VARCHAR(32) DEFAULT 'PENDING'," +
+            "  task_id VARCHAR(36)," +
+            "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+            "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," +
+            "  INDEX idx_ss_storyboard (storyboard_id)," +
+            "  FOREIGN KEY (storyboard_id) REFERENCES storyboards(id) ON DELETE CASCADE" +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }
 
     private void addColumnIfMissing(String table, String column, String alterSql) {
