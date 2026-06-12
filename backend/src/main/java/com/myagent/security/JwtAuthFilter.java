@@ -26,17 +26,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain chain)
             throws ServletException, IOException {
+        String token = null;
+        // 1. Check Authorization header
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
-            if (jwtUtil.isValid(token)) {
-                String userId = jwtUtil.getUserId(token);
-                String username = jwtUtil.getUsername(token);
-                UserPrincipal principal = new UserPrincipal(userId, username);
-                UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(principal, null, List.of());
-                SecurityContextHolder.getContext().setAuthentication(auth);
-            }
+            token = header.substring(7);
+        }
+        // 2. Fallback: check query parameter (for <video>/<img> native browser requests)
+        if (token == null) {
+            token = request.getParameter("token");
+        }
+        if (token != null && jwtUtil.isValid(token)) {
+            String userId = jwtUtil.getUserId(token);
+            String username = jwtUtil.getUsername(token);
+            UserPrincipal principal = new UserPrincipal(userId, username);
+            UsernamePasswordAuthenticationToken auth =
+                    new UsernamePasswordAuthenticationToken(principal, null, List.of());
+            SecurityContextHolder.getContext().setAuthentication(auth);
         }
         chain.doFilter(request, response);
     }
