@@ -15,7 +15,27 @@
       </button>
     </div>
 
+    <!-- Mode tabs -->
+    <div class="vgp-mode-tabs">
+      <button class="mode-tab" :class="{ active: mode === 'single' }" @click="mode = 'single'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="23 7 16 12 23 17 23 7"/>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+        单镜头生成
+      </button>
+      <button class="mode-tab" :class="{ active: mode === 'storyboard' }" @click="mode = 'storyboard'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        分镜编排
+      </button>
+    </div>
+
     <div class="vgp-body">
+      <!-- Existing single-shot mode -->
+      <template v-if="mode === 'single'">
       <!-- Task list -->
       <div v-if="tasks.length > 0" class="vgp-task-list">
         <div class="vgp-section-title task-list-header" @click="tasksCollapsed = !tasksCollapsed">
@@ -302,6 +322,144 @@
           {{ submitting ? '提交中...' : '开始生成' }}
         </button>
       </div>
+      </template>
+
+      <!-- Storyboard mode -->
+      <template v-if="mode === 'storyboard'">
+        <!-- Phase 1: Input idea -->
+        <div class="storyboard-section">
+          <div class="vgp-section-title">视频创意</div>
+          <textarea
+            v-model="storyboardIdea"
+            class="form-textarea"
+            rows="3"
+            placeholder="描述你的视频创意，AI 将自动拆分为分镜脚本..."
+          ></textarea>
+          <div class="sb-idea-row">
+            <div class="sb-shot-count">
+              <label>镜头数量:</label>
+              <input type="number" v-model.number="shotCount" min="2" max="12" class="shot-count-input" />
+              <span>个</span>
+            </div>
+            <button
+              class="btn-generate-sb"
+              :disabled="generating || !storyboardIdea.trim()"
+              @click="generateStoryboard"
+            >
+              <svg v-if="generating" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              AI 生成分镜
+            </button>
+          </div>
+        </div>
+
+        <!-- Phase 2: Edit storyboard -->
+        <div v-if="shots.length > 0" class="storyboard-section">
+          <div class="sb-title-row">
+            <input v-model="storyboardTitle" class="sb-title-input" placeholder="分镜标题..." />
+            <button class="btn-save-sb" :disabled="savingSb || !storyboardTitle.trim()" @click="saveStoryboard">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+              保存分镜
+            </button>
+          </div>
+
+          <div class="shot-table">
+            <div class="shot-table-header">
+              <span class="col-num">镜头</span>
+              <span class="col-desc">画面描述</span>
+              <span class="col-cam">运镜</span>
+              <span class="col-dur">时长</span>
+              <span class="col-actions">操作</span>
+            </div>
+            <div v-for="(shot, i) in shots" :key="i" class="shot-row">
+              <span class="col-num">{{ i + 1 }}</span>
+              <textarea v-model="shot.shotDescription" class="shot-desc-input" rows="2"></textarea>
+              <select v-model="shot.cameraMovement" class="shot-cam-select">
+                <option value="固定">固定</option>
+                <option value="推镜">推镜</option>
+                <option value="拉镜">拉镜</option>
+                <option value="摇镜">摇镜</option>
+                <option value="跟镜">跟镜</option>
+                <option value="升降">升降</option>
+              </select>
+              <input type="number" v-model.number="shot.duration" class="shot-dur-input" min="4" max="12" />
+              <div class="col-actions">
+                <button class="btn-shot-action" title="上移" :disabled="i === 0" @click="moveShot(i, -1)">↑</button>
+                <button class="btn-shot-action" title="下移" :disabled="i === shots.length - 1" @click="moveShot(i, 1)">↓</button>
+                <button class="btn-shot-action btn-shot-delete" title="删除" @click="removeShot(i)">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-add-shot" @click="addShot">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            添加镜头
+          </button>
+        </div>
+
+        <!-- Phase 3: Submit settings (reuse existing advanced settings) -->
+        <div v-if="shots.length > 0" class="storyboard-section">
+          <div class="vgp-section-title">生成设置</div>
+
+          <div class="form-row">
+            <label class="form-label">比例</label>
+            <div class="btn-group">
+              <button v-for="r in ratios" :key="r" :class="{ active: aspectRatio === r }" class="btn-option" @click="aspectRatio = r">{{ r }}</button>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">嵌入字幕</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="subtitleEnabled" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">生成音频</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="generateAudio" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="negative-prompt-section">
+            <label class="form-label">排除内容（反向提示词）</label>
+            <div class="negative-tags">
+              <button v-for="tag in negativeTagOptions" :key="tag" class="tag-negative" :class="{ selected: selectedNegativeTags.includes(tag) }" @click="toggleNegativeTag(tag)">{{ tag }}</button>
+            </div>
+            <input type="text" v-model="customNegative" class="input-custom-negative" placeholder="输入想排除的内容，逗号分隔..." />
+          </div>
+
+          <button class="btn-submit" :disabled="!shots.length || submittingSb" @click="submitAllShots">
+            <svg v-if="submittingSb" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+              <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+            </svg>
+            🚀 全部生成 ({{ shots.length }}个镜头)
+          </button>
+
+          <!-- Shot status display -->
+          <div v-if="shots.some(s => s.status && s.status !== 'PENDING')" class="shot-status-list">
+            <div v-for="(shot, i) in shots" :key="'status-'+i" class="shot-status-row">
+              <span>镜头{{ i + 1 }}</span>
+              <span :class="'shot-status-badge status-' + (shot.status || 'PENDING').toLowerCase()">{{ shot.status || 'PENDING' }}</span>
+              <button v-if="shot.status === 'PENDING'" class="btn-shot-submit" @click="submitSingleShot(i)">生成此镜</button>
+              <button v-if="shot.status === 'SUCCEEDED'" class="btn-shot-play" @click="playShotVideo(i)">播放</button>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
     <!-- Translate confirmation modal -->
     <div v-if="showTranslateModal" class="modal-overlay" @click.self="showTranslateModal = false">
@@ -358,6 +516,18 @@ const tasks = ref([])
 const firstFramePreview = ref(null)
 const firstFrameBase64 = ref(null)
 const fileInput = ref(null)
+
+// Storyboard mode
+const mode = ref('single') // 'single' | 'storyboard'
+const storyboardIdea = ref('')
+const shotCount = ref(5)
+const shots = ref([])
+const generating = ref(false)
+const storyboardTitle = ref('')
+const storyboardId = ref(null)
+const savingSb = ref(false)
+const submittingSb = ref(false)
+const savedStoryboards = ref([])
 
 const ratios = ['16:9', '9:16', '1:1']
 
@@ -623,6 +793,152 @@ function toggleNegativeTag(tag) {
   const idx = selectedNegativeTags.value.indexOf(tag)
   if (idx >= 0) selectedNegativeTags.value.splice(idx, 1)
   else selectedNegativeTags.value.push(tag)
+}
+
+// ── Storyboard methods ──
+
+async function generateStoryboard() {
+  if (!storyboardIdea.value.trim() || generating.value) return
+  generating.value = true
+  try {
+    const res = await api.generateStoryboard(storyboardIdea.value.trim(), shotCount.value)
+    shots.value = (res.shots || []).map(s => ({
+      ...s,
+      status: 'PENDING',
+      taskId: null
+    }))
+    storyboardId.value = null
+    if (!storyboardTitle.value) {
+      storyboardTitle.value = storyboardIdea.value.trim().substring(0, 50)
+    }
+  } catch (e) {
+    emit('toast', { message: '分镜生成失败: ' + e.message, type: 'error' })
+  } finally {
+    generating.value = false
+  }
+}
+
+async function saveStoryboard() {
+  if (!storyboardTitle.value.trim() || savingSb.value) return
+  savingSb.value = true
+  try {
+    const data = {
+      conversationId: props.conversationId,
+      title: storyboardTitle.value.trim(),
+      idea: storyboardIdea.value.trim(),
+      shotCount: shotCount.value,
+      shots: shots.value.map(s => ({
+        sceneNote: s.sceneNote || '',
+        shotDescription: s.shotDescription,
+        cameraMovement: s.cameraMovement || '固定',
+        duration: s.duration || 5,
+        audioHint: s.audioHint || ''
+      }))
+    }
+    const res = await api.saveStoryboard(data)
+    storyboardId.value = res.id
+    if (res.shots) {
+      shots.value = res.shots.map((s, i) => ({
+        ...s,
+        status: shots.value[i]?.status || 'PENDING',
+        taskId: shots.value[i]?.taskId || null
+      }))
+    }
+    emit('toast', { message: '分镜已保存', type: 'success' })
+  } catch (e) {
+    emit('toast', { message: '保存失败: ' + e.message, type: 'error' })
+  } finally {
+    savingSb.value = false
+  }
+}
+
+function addShot() {
+  shots.value.push({
+    sceneNote: '',
+    shotDescription: '',
+    cameraMovement: '固定',
+    duration: 5,
+    audioHint: '',
+    status: 'PENDING',
+    taskId: null
+  })
+}
+
+function removeShot(index) {
+  shots.value.splice(index, 1)
+}
+
+function moveShot(index, direction) {
+  const newIndex = index + direction
+  if (newIndex < 0 || newIndex >= shots.value.length) return
+  const temp = shots.value[index]
+  shots.value[index] = shots.value[newIndex]
+  shots.value[newIndex] = temp
+}
+
+async function submitAllShots() {
+  if (!shots.value.length || submittingSb.value) return
+  submittingSb.value = true
+  try {
+    const params = {
+      aspectRatio: aspectRatio.value,
+      negativePrompt: negativePrompt.value,
+      subtitleEnabled: subtitleEnabled.value,
+      generateAudio: generateAudio.value
+    }
+    if (storyboardId.value) {
+      const res = await api.submitStoryboard(storyboardId.value, params)
+      if (res.tasks) {
+        for (const t of res.tasks) {
+          const shot = shots.value.find(s => s.id === t.shotId)
+          if (shot) {
+            shot.status = t.status || 'SUBMITTED'
+            shot.taskId = t.taskId
+          }
+        }
+      }
+      await loadTasks()
+    } else {
+      emit('toast', { message: '请先保存分镜再生成', type: 'error' })
+    }
+  } catch (e) {
+    emit('toast', { message: '提交失败: ' + e.message, type: 'error' })
+  } finally {
+    submittingSb.value = false
+  }
+}
+
+async function submitSingleShot(index) {
+  const shot = shots.value[index]
+  if (!shot || shot.status !== 'PENDING') return
+  if (!storyboardId.value) {
+    emit('toast', { message: '请先保存分镜', type: 'error' })
+    return
+  }
+  try {
+    const params = {
+      aspectRatio: aspectRatio.value,
+      negativePrompt: negativePrompt.value,
+      subtitleEnabled: subtitleEnabled.value,
+      generateAudio: generateAudio.value
+    }
+    const res = await api.submitStoryboardShot(storyboardId.value, shot.id, params)
+    shot.status = res.status || 'SUBMITTED'
+    shot.taskId = res.taskId
+    await loadTasks()
+  } catch (e) {
+    emit('toast', { message: '提交失败: ' + e.message, type: 'error' })
+  }
+}
+
+function playShotVideo(index) {
+  const shot = shots.value[index]
+  if (shot && shot.taskId) {
+    const task = tasks.value.find(t => t.id === shot.taskId)
+    if (task) {
+      emit('play', task)
+    }
+  }
 }
 </script>
 
@@ -1416,4 +1732,110 @@ function toggleNegativeTag(tag) {
 }
 .input-custom-negative:focus { border-color: var(--accent); }
 .input-custom-negative::placeholder { color: var(--text-muted); }
+
+/* ── Mode tabs ── */
+.vgp-mode-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+.mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mode-tab:hover { border-color: var(--accent); color: var(--accent); }
+.mode-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ── Storyboard ── */
+.storyboard-section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.sb-idea-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.sb-shot-count { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.shot-count-input { width: 50px; padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; text-align: center; background: var(--bg); color: var(--text); }
+.btn-generate-sb {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; background: linear-gradient(135deg, #667eea, #764ba2); color: #fff;
+  border: none; border-radius: 8px; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: opacity 0.2s;
+}
+.btn-generate-sb:hover:not(:disabled) { opacity: 0.9; }
+.btn-generate-sb:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sb-title-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.sb-title-input { flex: 1; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 14px; }
+.btn-save-sb {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 14px; background: var(--success); color: #fff;
+  border: none; border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+.btn-save-sb:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.shot-table { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.shot-table-header {
+  display: grid; grid-template-columns: 40px 1fr 80px 60px 80px; gap: 6px;
+  padding: 8px 10px; background: var(--bg-secondary); font-size: 12px; font-weight: 600; color: var(--text-secondary);
+}
+.shot-row {
+  display: grid; grid-template-columns: 40px 1fr 80px 60px 80px; gap: 6px;
+  padding: 8px 10px; border-top: 1px solid var(--border-color); align-items: center;
+}
+.shot-row:hover { background: var(--bg-hover); }
+.col-num { text-align: center; font-weight: 600; font-size: 13px; }
+.shot-desc-input {
+  width: 100%; padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px;
+  background: var(--bg); color: var(--text); font-size: 12px; resize: vertical; min-height: 36px;
+  box-sizing: border-box;
+}
+.shot-cam-select {
+  padding: 4px; border: 1px solid var(--border-color); border-radius: 4px;
+  background: var(--bg); color: var(--text); font-size: 12px;
+}
+.shot-dur-input { width: 100%; padding: 4px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg); color: var(--text); text-align: center; font-size: 12px; }
+.col-actions { display: flex; gap: 2px; justify-content: center; }
+.btn-shot-action { padding: 2px 6px; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg); color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+.btn-shot-action:hover { background: var(--bg-hover); }
+.btn-shot-action:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn-shot-delete { color: var(--danger); border-color: transparent; }
+
+.btn-add-shot {
+  display: flex; align-items: center; gap: 4px; margin-top: 8px;
+  padding: 6px 12px; border: 1px dashed var(--border-color); border-radius: 6px;
+  background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; width: 100%; justify-content: center;
+}
+.btn-add-shot:hover { border-color: var(--accent); color: var(--accent); }
+
+.shot-status-list { margin-top: 12px; }
+.shot-status-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-top: 1px solid var(--border-color); font-size: 13px;
+}
+.shot-status-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.shot-status-badge.status-pending { background: var(--bg-secondary); color: var(--text-secondary); }
+.shot-status-badge.status-submitted { background: #dbeafe; color: #2563eb; }
+.shot-status-badge.status-processing { background: #fef3c7; color: #d97706; }
+.shot-status-badge.status-succeeded { background: #d1fae5; color: #059669; }
+.shot-status-badge.status-failed { background: #fee2e2; color: #dc2626; }
+.btn-shot-submit, .btn-shot-play {
+  margin-left: auto; padding: 3px 10px; border: 1px solid var(--accent); border-radius: 4px;
+  background: transparent; color: var(--accent); font-size: 11px; cursor: pointer;
+}
+.btn-shot-submit:hover, .btn-shot-play:hover { background: var(--accent); color: #fff; }
 </style>
