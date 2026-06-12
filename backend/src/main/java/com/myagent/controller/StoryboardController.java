@@ -6,10 +6,13 @@ import com.myagent.security.UserPrincipal;
 import com.myagent.service.StoryboardService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 @RestController
@@ -18,9 +21,12 @@ public class StoryboardController {
 
     private static final Logger log = LoggerFactory.getLogger(StoryboardController.class);
     private final StoryboardService storyboardService;
+    private final Path storagePath;
 
-    public StoryboardController(StoryboardService storyboardService) {
+    public StoryboardController(StoryboardService storyboardService,
+                                @Value("${app.video.storage.path:./data/videos}") String storagePath) {
         this.storyboardService = storyboardService;
+        this.storagePath = Paths.get(storagePath);
     }
 
     /**
@@ -257,6 +263,59 @@ public class StoryboardController {
             return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Merge all SUCCEEDED shots into a single video with FFmpeg xfade transitions.
+     * Returns the merged video URL path.
+     */
+    @PostMapping("/storyboard/{id}/merge")
+    public ResponseEntity<?> mergeVideos(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id) {
+        try {
+            java.nio.file.Path mergedPath = storyboardService.mergeStoryboardVideos(id, principal.getUserId());
+            String url = "/api/video-gen/storyboard/" + id + "/merged-video";
+            return ResponseEntity.ok(Map.of("url", url, "merged", true));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Video merge failed for storyboard {}", id, e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "视频合并失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Stream the merged video file.
+     */
+    @GetMapping("/storyboard/{id}/merged-video")
+    public ResponseEntity<?> getMergedVideo(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id) {
+        try {
+            // Verify ownership
+            storyboardService.getStoryboard(id, principal.getUserId());
+            java.nio.file.Path mergedPath = storagePath.resolve(id + "_merged.mp4");
+            if (!java.nio.file.Files.exists(mergedPath)) {
+                return ResponseEntity.notFound().build();
+            }
+            org.springframework.core.io.Resource resource =
+                new org.springframework.core.io.FileSystemResource(mergedPath);
+            return ResponseEntity.ok()
+                    .contentType(org.springframework.http.MediaType.parseMediaType("video/mp4"))
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                            "inline; filename=\"" + id + "_merged.mp4\"")
+                    .header(org.springframework.http.HttpHeaders.ACCEPT_RANGES, "bytes")
+                    .body(resource);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
         }
     }
 }

@@ -470,9 +470,26 @@
             <button :class="{ active: resultDisplayMode === 'merged' }" @click="resultDisplayMode = 'merged'">合并播放</button>
           </div>
 
-          <button v-if="resultDisplayMode === 'merged' && shots.some(s => s.status === 'SUCCEEDED')" class="btn-merged-play" @click="playAllShots">
-            ▶ 连续播放全部 ({{ shots.filter(s => s.status === 'SUCCEEDED').length }}个镜头)
-          </button>
+          <div v-if="resultDisplayMode === 'merged' && shots.some(s => s.status === 'SUCCEEDED')" class="merged-section">
+            <div v-if="!mergedVideoUrl && !merging">
+              <button class="btn-merged-play" :disabled="!storyboardId" @click="mergeVideos">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="3" width="8" height="10" rx="1"/><rect x="14" y="3" width="8" height="10" rx="1"/>
+                  <polygon points="6 16 6 21 8 21 8 17 10 17 10 21 12 21 12 16 6 16"/>
+                  <polygon points="16 16 16 21 18 21 18 17 20 17 20 21 22 21 22 16 16 16"/>
+                </svg>
+                FFmpeg 转场合并 ({{ shots.filter(s => s.status === 'SUCCEEDED').length }}个镜头)
+              </button>
+              <p class="merged-hint" v-if="!storyboardId">请先保存分镜</p>
+            </div>
+            <div v-if="merging" class="merging-status">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
+              <span>正在合并视频，请稍候...</span>
+            </div>
+            <video v-if="mergedVideoUrl" :src="mergedVideoUrl" controls autoplay class="merged-video-player"></video>
+          </div>
 
           <!-- Shot status display -->
           <div v-if="resultDisplayMode === 'individual' && shots.some(s => s.status && s.status !== 'PENDING')" class="shot-status-list">
@@ -555,6 +572,8 @@ const submittingSb = ref(false)
 const savedStoryboards = ref([])
 const showShotDetail = ref(null)  // index of expanded shot, or null
 const resultDisplayMode = ref('individual')  // 'individual' | 'merged'
+const merging = ref(false)
+const mergedVideoUrl = ref(null)
 
 const ratios = ['16:9', '9:16', '1:1']
 
@@ -968,18 +987,19 @@ function playShotVideo(index) {
   }
 }
 
-function playAllShots() {
-  const succeeded = shots.value.filter(s => s.status === 'SUCCEEDED' && s.taskId)
-  if (!succeeded.length) return
-  let current = 0
-  function playNext() {
-    if (current < succeeded.length) {
-      emit('play', { id: succeeded[current].taskId })
-      // Users manually advance; this just queues them all
-      current++
-    }
+async function mergeVideos() {
+  if (!storyboardId.value || merging.value) return
+  merging.value = true
+  mergedVideoUrl.value = null
+  try {
+    const res = await api.mergeStoryboardVideos(storyboardId.value)
+    mergedVideoUrl.value = api.getMergedVideoUrl(storyboardId.value)
+    emit('toast', { message: '视频合并完成', type: 'success' })
+  } catch (e) {
+    emit('toast', { message: '合并失败: ' + e.message, type: 'error' })
+  } finally {
+    merging.value = false
   }
-  playNext()
 }
 </script>
 
@@ -1894,6 +1914,11 @@ function playAllShots() {
 .sb-display-mode .display-label { color: var(--text-secondary); }
 .sb-display-mode button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-secondary); font-size: 11px; cursor: pointer; }
 .sb-display-mode button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-.btn-merged-play { display: flex; align-items: center; gap: 4px; padding: 8px 16px; background: var(--success); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; width: 100%; justify-content: center; margin-top: 8px; }
-.btn-merged-play:hover { opacity: 0.9; }
+.merged-section { margin-top: 12px; }
+.btn-merged-play { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; width: 100%; justify-content: center; }
+.btn-merged-play:hover:not(:disabled) { opacity: 0.9; }
+.btn-merged-play:disabled { opacity: 0.5; cursor: not-allowed; }
+.merged-hint { font-size: 11px; color: var(--text-secondary); text-align: center; margin-top: 4px; }
+.merging-status { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 20px; color: var(--text-secondary); font-size: 14px; }
+.merged-video-player { width: 100%; max-height: 400px; border-radius: 8px; margin-top: 8px; background: #000; }
 </style>

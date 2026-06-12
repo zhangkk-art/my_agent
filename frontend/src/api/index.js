@@ -612,3 +612,19 @@ export async function submitStoryboardShot(storyboardId, shotId, params) {
   }
   return res.json();
 }
+
+export async function mergeStoryboardVideos(storyboardId) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/storyboard/${storyboardId}/merge`, {
+    method: 'POST'
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '视频合并失败');
+  }
+  return res.json();
+}
+
+export function getMergedVideoUrl(storyboardId) {
+  const token = getToken();
+  return `${BASE_URL}/video-gen/storyboard/${storyboardId}/merged-video${token ? '?token=' + token : ''}`;
+}

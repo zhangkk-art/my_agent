@@ -5,15 +5,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myagent.config.ChatClientRegistry;
 import com.myagent.mapper.StoryboardMapper;
 import com.myagent.mapper.StoryboardShotMapper;
+import com.myagent.mapper.VideoGenTaskMapper;
 import com.myagent.model.Storyboard;
 import com.myagent.model.StoryboardShot;
 import com.myagent.model.VideoGenRequest;
 import com.myagent.model.VideoGenTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -53,16 +59,25 @@ public class StoryboardService {
     private final StoryboardMapper storyboardMapper;
     private final StoryboardShotMapper storyboardShotMapper;
     private final VideoGenService videoGenService;
+    private final VideoGenTaskMapper videoGenTaskMapper;
     private final ObjectMapper objectMapper;
+    private final String ffmpegPath;
+    private final Path storagePath;
 
     public StoryboardService(ChatClientRegistry clientRegistry,
                              StoryboardMapper storyboardMapper,
                              StoryboardShotMapper storyboardShotMapper,
-                             VideoGenService videoGenService) {
+                             VideoGenService videoGenService,
+                             VideoGenTaskMapper videoGenTaskMapper,
+                             @Value("${app.video.ffmpeg.path:ffmpeg}") String ffmpegPath,
+                             @Value("${app.video.storage.path:./data/videos}") String storagePath) {
         this.clientRegistry = clientRegistry;
         this.storyboardMapper = storyboardMapper;
         this.storyboardShotMapper = storyboardShotMapper;
         this.videoGenService = videoGenService;
+        this.videoGenTaskMapper = videoGenTaskMapper;
+        this.ffmpegPath = ffmpegPath;
+        this.storagePath = Paths.get(storagePath);
         this.objectMapper = new ObjectMapper();
     }
 
@@ -407,6 +422,156 @@ public class StoryboardService {
 
         log.info("Single shot submitted: shotId={}, taskId={}", shot.getId(), task.getId());
         return result;
+    }
+
+    /**
+     * Merge all SUCCEEDED shots of a storyboard into a single video using FFmpeg xfade transitions.
+     * Returns the merged video file path.
+     */
+    public Path mergeStoryboardVideos(String storyboardId, String userId) throws IOException, InterruptedException {
+        Storyboard storyboard = storyboardMapper.selectById(storyboardId);
+        if (storyboard == null) {
+            throw new NoSuchElementException("分镜不存在");
+        }
+        if (userId != null && !userId.equals(storyboard.getUserId())) {
+            throw new SecurityException("无权访问此分镜");
+        }
+
+        List<StoryboardShot> shots = storyboardShotMapper.selectByMap(
+                Map.of("storyboard_id", storyboardId));
+        shots.sort(Comparator.comparingInt(s -> s.getSortOrder() != null ? s.getSortOrder() : 0));
+
+        // Filter to only SUCCEEDED shots with a task_id
+        List<StoryboardShot> succeeded = shots.stream()
+                .filter(s -> "SUCCEEDED".equals(s.getStatus()) && s.getTaskId() != null)
+                .toList();
+
+        if (succeeded.isEmpty()) {
+            throw new IllegalArgumentException("没有已完成的镜头可合并");
+        }
+
+        // Only one shot — return its video directly, no merge needed
+        if (succeeded.size() == 1) {
+            VideoGenTask task = videoGenTaskMapper.selectById(succeeded.get(0).getTaskId());
+            if (task == null || task.getVideoPath() == null) {
+                throw new IllegalArgumentException("镜头视频文件尚未下载完成");
+            }
+            Path p = Path.of(task.getVideoPath());
+            if (!Files.exists(p)) {
+                throw new IllegalArgumentException("镜头视频文件不存在");
+            }
+            return p;
+        }
+
+        // Collect video paths and durations
+        List<Path> videoPaths = new ArrayList<>();
+        List<Double> offsets = new ArrayList<>();
+        double currentOffset = 0;
+        double transitionDuration = 1.0; // 1-second crossfade
+
+        for (StoryboardShot shot : succeeded) {
+            VideoGenTask task = videoGenTaskMapper.selectById(shot.getTaskId());
+            if (task == null || task.getVideoPath() == null) {
+                log.warn("Skipping shot {} — video not ready", shot.getId());
+                continue;
+            }
+            Path p = Path.of(task.getVideoPath());
+            if (!Files.exists(p)) {
+                log.warn("Skipping shot {} — video file missing: {}", shot.getId(), task.getVideoPath());
+                continue;
+            }
+            videoPaths.add(p);
+            offsets.add(currentOffset);
+            currentOffset += (shot.getDuration() != null ? shot.getDuration() : 5);
+            currentOffset -= transitionDuration; // overlap for crossfade
+        }
+
+        if (videoPaths.size() < 2) {
+            // Fallback: not enough valid videos after filtering
+            if (videoPaths.isEmpty()) {
+                throw new IllegalArgumentException("没有可用的视频文件进行合并");
+            }
+            return videoPaths.get(0);
+        }
+
+        // Determine target resolution (default 16:9 at 720p)
+        int width = 1280;
+        int height = 720;
+
+        // Build FFmpeg xfade filter chain
+        // Step 1: normalize each input [0:v],[1:v],... → [v0],[v1],...
+        StringBuilder filterComplex = new StringBuilder();
+        for (int i = 0; i < videoPaths.size(); i++) {
+            filterComplex.append(String.format(
+                "[%d:v]scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS[v%d]; ",
+                i, width, height, width, height, i));
+        }
+
+        // Step 2: chain xfade transitions
+        String prevLabel = "v0";
+        for (int i = 1; i < videoPaths.size(); i++) {
+            double offset = offsets.get(i);
+            String outLabel = (i == videoPaths.size() - 1) ? "fvout" : "fv" + i;
+            filterComplex.append(String.format(
+                "[%s][v%d]xfade=transition=fade:duration=%.1f:offset=%.1f[%s]",
+                prevLabel, i, transitionDuration, offset, outLabel));
+            if (i < videoPaths.size() - 1) {
+                filterComplex.append("; ");
+            }
+            prevLabel = outLabel;
+        }
+
+        // Output path
+        Path mergedPath = storagePath.resolve(storyboardId + "_merged.mp4");
+
+        // Build command
+        List<String> cmd = new ArrayList<>();
+        cmd.add(ffmpegPath);
+        for (Path vp : videoPaths) {
+            cmd.add("-i");
+            cmd.add(vp.toString());
+        }
+        cmd.add("-filter_complex");
+        cmd.add(filterComplex.toString());
+        cmd.add("-map");
+        cmd.add("[fvout]");
+        cmd.add("-c:v");
+        cmd.add("libx264");
+        cmd.add("-preset");
+        cmd.add("fast");
+        cmd.add("-pix_fmt");
+        cmd.add("yuv420p");
+        cmd.add("-y");
+        cmd.add(mergedPath.toString());
+
+        log.info("FFmpeg merge: videoCount={}, mergedPath={}", videoPaths.size(), mergedPath);
+        log.debug("FFmpeg command: {}", String.join(" ", cmd));
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        // Read output for logging
+        String ffmpegOutput;
+        try (var reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(process.getInputStream()))) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+            ffmpegOutput = sb.toString();
+        }
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            log.error("FFmpeg merge failed: exit={}, output={}", exitCode, ffmpegOutput);
+            throw new IOException("视频合并失败 (FFmpeg exit " + exitCode + ")");
+        }
+
+        log.info("FFmpeg merge completed: {} videos → {} ({} bytes)",
+                videoPaths.size(), mergedPath, Files.size(mergedPath));
+        return mergedPath;
     }
 
     /**
