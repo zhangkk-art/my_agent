@@ -87,6 +87,24 @@
               播放
             </button>
             <button
+              v-if="task.status === 'SUCCEEDED'"
+              class="btn-post-process"
+              :disabled="processingTaskId === task.id"
+              title="嵌入字幕"
+              @click="postProcessTask(task, 'subtitle')"
+            >
+              {{ processingTaskId === task.id && processingType === 'subtitle' ? '处理中...' : '字幕' }}
+            </button>
+            <button
+              v-if="task.status === 'SUCCEEDED'"
+              class="btn-post-process"
+              :disabled="processingTaskId === task.id"
+              title="TTS配音"
+              @click="postProcessTask(task, 'narrate')"
+            >
+              {{ processingTaskId === task.id && processingType === 'narrate' ? '处理中...' : '配音' }}
+            </button>
+            <button
               class="btn-delete-task"
               title="删除"
               @click="$emit('deleteTask', task.id)"
@@ -243,59 +261,11 @@
           </div>
 
           <div class="form-row">
-            <label class="form-label">嵌入字幕</label>
-            <label class="toggle-switch">
-              <input type="checkbox" v-model="subtitleEnabled" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-
-          <div class="form-row">
             <label class="form-label">生成音频</label>
             <label class="toggle-switch">
               <input type="checkbox" v-model="generateAudio" />
               <span class="toggle-slider"></span>
             </label>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">字幕配音</label>
-            <label class="toggle-switch">
-              <input type="checkbox" v-model="narrateSubtitles" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">自定义字幕</label>
-            <label class="toggle-switch">
-              <input type="checkbox" v-model="customSubtitlesEnabled" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-
-          <div v-if="customSubtitlesEnabled" class="custom-subtitles-editor">
-            <div class="subtitle-entries">
-              <div v-for="(entry, i) in customSubtitleEntries" :key="i" class="subtitle-entry">
-                <div class="subtitle-entry-header">
-                  <span class="entry-index">#{{ i + 1 }}</span>
-                  <button class="btn-remove-entry" @click="removeSubtitleEntry(i)" title="删除">✕</button>
-                </div>
-                <div class="entry-time-row">
-                  <input type="number" v-model.number="entry.startSec" class="entry-time" min="0" :max="duration" step="0.5" placeholder="0.0" />
-                  <span class="time-sep">→</span>
-                  <input type="number" v-model.number="entry.endSec" class="entry-time" min="0" :max="duration" step="0.5" placeholder="2.0" />
-                  <span class="time-unit">秒</span>
-                </div>
-                <input type="text" v-model="entry.text" class="entry-text" placeholder="输入字幕文字..." />
-              </div>
-            </div>
-            <button class="btn-add-subtitle" @click="addSubtitleEntry">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              添加字幕
-            </button>
           </div>
 
           <div class="negative-prompt-section">
@@ -433,14 +403,6 @@
           </div>
 
           <div class="form-row">
-            <label class="form-label">嵌入字幕</label>
-            <label class="toggle-switch">
-              <input type="checkbox" v-model="subtitleEnabled" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-
-          <div class="form-row">
             <label class="form-label">生成音频</label>
             <label class="toggle-switch">
               <input type="checkbox" v-model="generateAudio" />
@@ -549,6 +511,9 @@ const aspectRatio = ref('16:9')
 const subtitleEnabled = ref(false)
 const generateAudio = ref(true)
 const narrateSubtitles = ref(false)
+// Post-processing state
+const processingTaskId = ref(null)
+const processingType = ref(null) // 'subtitle' | 'narrate'
 const tasksCollapsed = ref(true)
 const customSubtitlesEnabled = ref(false)
 const customSubtitleEntries = ref([])  // [{startSec, endSec, text}]
@@ -634,6 +599,26 @@ async function loadTasks() {
   }
 }
 
+async function postProcessTask(task, type) {
+  if (processingTaskId.value) return
+  processingTaskId.value = task.id
+  processingType.value = type
+  try {
+    const options = {
+      subtitleEnabled: type === 'subtitle',
+      narrateSubtitles: type === 'narrate'
+    }
+    await api.postProcessVideo(task.id, options)
+    emit('toast', { message: type === 'subtitle' ? '字幕已嵌入' : '配音已完成', type: 'success' })
+    await loadTasks()
+  } catch (e) {
+    emit('toast', { message: '处理失败: ' + e.message, type: 'error' })
+  } finally {
+    processingTaskId.value = null
+    processingType.value = null
+  }
+}
+
 onUnmounted(() => {
   stopPolling()
 })
@@ -691,10 +676,7 @@ async function submitTask() {
       seed: -1,
       firstFrameBase64: firstFrameBase64.value,
       conversationId: props.conversationId,
-      subtitleEnabled: subtitleEnabled.value,
       generateAudio: generateAudio.value,
-      narrateSubtitles: narrateSubtitles.value,
-      customSubtitles: customSubtitlesEnabled.value ? customSubtitleEntries.value : null,
       negativePrompt: negativePrompt.value || null
     })
     const fullTask = {
@@ -929,7 +911,6 @@ async function submitAllShots() {
     const params = {
       aspectRatio: aspectRatio.value,
       negativePrompt: negativePrompt.value,
-      subtitleEnabled: subtitleEnabled.value,
       generateAudio: generateAudio.value
     }
     if (storyboardId.value) {
@@ -965,7 +946,6 @@ async function submitSingleShot(index) {
     const params = {
       aspectRatio: aspectRatio.value,
       negativePrompt: negativePrompt.value,
-      subtitleEnabled: subtitleEnabled.value,
       generateAudio: generateAudio.value
     }
     const res = await api.submitStoryboardShot(storyboardId.value, shot.id, params)
@@ -1155,6 +1135,19 @@ async function mergeVideos() {
 .btn-play:hover {
   opacity: 0.85;
 }
+
+.btn-post-process {
+  padding: 2px 8px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--primary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-post-process:hover:not(:disabled) { background: var(--primary); color: #fff; }
+.btn-post-process:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-delete-task {
   width: 24px;

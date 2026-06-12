@@ -253,22 +253,6 @@ public class VideoGenService {
                                 VideoGenTask t = taskMapper.selectById(tid);
                                 if (t != null) {
                                     t.setVideoPath(localPath);
-                                    // Process subtitles if enabled
-                                    if (Boolean.TRUE.equals(t.getSubtitleEnabled())) {
-                                        try {
-                                            processSubtitles(t);
-                                        } catch (Exception se) {
-                                            log.error("Subtitle processing failed for task {}", tid, se);
-                                        }
-                                    }
-                                    // TTS narration: synthesize voice and mix into video
-                                    if (Boolean.TRUE.equals(t.getNarrateSubtitles())) {
-                                        try {
-                                            processNarration(t);
-                                        } catch (Exception ne) {
-                                            log.error("TTS narration failed for task {}", tid, ne);
-                                        }
-                                    }
                                     t.setUpdatedAt(LocalDateTime.now());
                                     taskMapper.updateById(t);
                                 }
@@ -297,6 +281,54 @@ public class VideoGenService {
             }
         } catch (Exception e) {
             log.error("Failed to poll Ark task {}", task.getId(), e);
+        }
+
+        task.setUpdatedAt(LocalDateTime.now());
+        taskMapper.updateById(task);
+        return task;
+    }
+
+    /**
+     * Post-process a generated video: burn subtitles and/or TTS narration.
+     * Called on-demand AFTER video generation succeeds, so users can decide
+     * whether to apply subtitles/narration after seeing the result.
+     */
+    @Transactional
+    public VideoGenTask applyPostProcessing(String taskId, boolean subtitleEnabled,
+                                            boolean narrateSubtitles,
+                                            List<SubtitleEntry> customSubtitles) {
+        VideoGenTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new NoSuchElementException("任务不存在: " + taskId);
+        }
+        if (!"SUCCEEDED".equals(task.getStatus())) {
+            throw new IllegalArgumentException("视频尚未生成完成，无法添加字幕/配音");
+        }
+        if (task.getVideoPath() == null) {
+            throw new IllegalArgumentException("视频文件尚未就绪");
+        }
+
+        task.setSubtitleEnabled(subtitleEnabled);
+        task.setNarrateSubtitles(narrateSubtitles);
+        if (customSubtitles != null && !customSubtitles.isEmpty()) {
+            try {
+                task.setCustomSubtitles(objectMapper.writeValueAsString(customSubtitles));
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                log.error("Failed to serialize custom subtitles for post-processing", e);
+            }
+        }
+
+        try {
+            // Burn subtitles first, then narrate on top
+            if (subtitleEnabled) {
+                processSubtitles(task);
+            }
+            if (narrateSubtitles) {
+                processNarration(task);
+            }
+        } catch (Exception e) {
+            log.error("Post-processing failed for task {}", taskId, e);
+            throw new RuntimeException("处理失败: " + e.getMessage(), e);
         }
 
         task.setUpdatedAt(LocalDateTime.now());

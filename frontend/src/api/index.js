@@ -628,3 +628,16 @@ export function getMergedVideoUrl(storyboardId) {
   const token = getToken();
   return `${BASE_URL}/video-gen/storyboard/${storyboardId}/merged-video${token ? '?token=' + token : ''}`;
 }
+
+export async function postProcessVideo(taskId, options) {
+  const res = await apiFetch(`${BASE_URL}/video-gen/tasks/${taskId}/post-process`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '处理失败');
+  }
+  return res.json();
+}

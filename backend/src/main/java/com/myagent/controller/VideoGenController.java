@@ -1,5 +1,6 @@
 package com.myagent.controller;
 
+import com.myagent.model.SubtitleEntry;
 import com.myagent.model.VideoGenRequest;
 import com.myagent.model.VideoGenTask;
 import com.myagent.model.VideoPromptTemplate;
@@ -143,6 +144,46 @@ public class VideoGenController {
             return ResponseEntity.ok(Map.of("deleted", true));
         } catch (NoSuchElementException e) {
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Post-process a generated video: burn subtitles and/or TTS narration.
+     * Called on-demand after generation, not automatically.
+     */
+    @PostMapping("/tasks/{id}/post-process")
+    public ResponseEntity<?> postProcess(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        try {
+            VideoGenTask task = videoGenService.getTask(id);
+            if (!task.getUserId().equals(principal.getUserId())) {
+                return ResponseEntity.status(403).body(Map.of("error", "无权处理此任务"));
+            }
+            boolean subtitleEnabled = Boolean.TRUE.equals(body.get("subtitleEnabled"));
+            boolean narrateSubtitles = Boolean.TRUE.equals(body.get("narrateSubtitles"));
+            List<SubtitleEntry> customSubtitles = null;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rawSubtitles = (List<Map<String, Object>>) body.get("customSubtitles");
+            if (rawSubtitles != null && !rawSubtitles.isEmpty()) {
+                customSubtitles = rawSubtitles.stream().map(m -> {
+                    SubtitleEntry e = new SubtitleEntry();
+                    e.setStartSec(m.get("startSec") != null ? ((Number) m.get("startSec")).doubleValue() : 0);
+                    e.setEndSec(m.get("endSec") != null ? ((Number) m.get("endSec")).doubleValue() : 2);
+                    e.setText((String) m.get("text"));
+                    return e;
+                }).toList();
+            }
+            VideoGenTask updated = videoGenService.applyPostProcessing(id, subtitleEnabled, narrateSubtitles, customSubtitles);
+            return ResponseEntity.ok(Map.of("status", updated.getStatus(), "videoPath", updated.getVideoPath()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Post-processing failed for task {}", id, e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "处理失败: " + e.getMessage()));
         }
     }
 
