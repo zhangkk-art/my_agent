@@ -427,9 +427,41 @@
 
           <!-- Display mode toggle -->
           <div class="sb-display-mode">
-            <span class="display-label">展示模式:</span>
-            <button :class="{ active: resultDisplayMode === 'individual' }" @click="resultDisplayMode = 'individual'">独立视频</button>
-            <button :class="{ active: resultDisplayMode === 'merged' }" @click="resultDisplayMode = 'merged'">合并播放</button>
+            <span class="display-label">展示模式</span>
+            <div class="display-mode-cards">
+              <div class="display-card"
+                :class="{ active: resultDisplayMode === 'individual' }"
+                @click="resultDisplayMode = 'individual'">
+                <div class="display-card-icon">
+                  <svg width="40" height="28" viewBox="0 0 40 28">
+                    <rect x="1" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                    <polygon points="6,8 6,20 10,14" fill="currentColor" opacity="0.5"/>
+                    <rect x="15" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                    <polygon points="20,8 20,20 24,14" fill="currentColor" opacity="0.5"/>
+                    <rect x="29" y="2" width="11" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
+                    <polygon points="34,8 34,20 38,14" fill="currentColor" opacity="0.3"/>
+                  </svg>
+                </div>
+                <span class="display-card-title">独立视频</span>
+                <span class="display-card-desc">逐个播放每个镜头</span>
+              </div>
+              <div class="display-card"
+                :class="{ active: resultDisplayMode === 'merged' }"
+                @click="resultDisplayMode = 'merged'">
+                <div class="display-card-icon">
+                  <svg width="40" height="28" viewBox="0 0 40 28">
+                    <rect x="1" y="2" width="12" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                    <polygon points="6,8 6,20 10,14" fill="currentColor" opacity="0.4"/>
+                    <line x1="13" y1="14" x2="17" y2="14" stroke="currentColor" stroke-width="1" stroke-dasharray="2,2"/>
+                    <polygon points="18,9 25,14 18,19" fill="currentColor"/>
+                    <rect x="25" y="2" width="14" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
+                    <polygon points="31,8 31,20 37,14" fill="currentColor"/>
+                  </svg>
+                </div>
+                <span class="display-card-title">合并播放</span>
+                <span class="display-card-desc">FFmpeg 转场合并为一条视频</span>
+              </div>
+            </div>
           </div>
 
           <div v-if="resultDisplayMode === 'merged' && shots.some(s => s.status === 'SUCCEEDED')" class="merged-section">
@@ -1903,10 +1935,20 @@ async function mergeVideos() {
 .shot-detail-input { flex: 1; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 12px; }
 
 /* ── Merged display mode ── */
-.sb-display-mode { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 12px; }
-.sb-display-mode .display-label { color: var(--text-secondary); }
-.sb-display-mode button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text-secondary); font-size: 11px; cursor: pointer; }
-.sb-display-mode button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.sb-display-mode { margin-bottom: 12px; }
+.sb-display-mode .display-label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.display-mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.display-card {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 8px; border: 2px solid var(--border); border-radius: 10px;
+  background: var(--bg); cursor: pointer; transition: all 0.2s; text-align: center;
+}
+.display-card:hover { border-color: var(--primary); }
+.display-card.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--bg)); }
+.display-card-icon { color: var(--text-secondary); transition: color 0.2s; }
+.display-card.active .display-card-icon { color: var(--primary); }
+.display-card-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.display-card-desc { font-size: 11px; color: var(--text-secondary); }
 .merged-section { margin-top: 12px; }
 .btn-merged-play { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; width: 100%; justify-content: center; }
 .btn-merged-play:hover:not(:disabled) { opacity: 0.9; }
