@@ -327,7 +327,7 @@
           </div>
         </div>
 
-        <!-- Phase 2: Edit storyboard (hidden in merged mode) -->
+        <!-- Phase 2: Edit storyboard / Read-only summary -->
         <div v-if="shots.length > 0 && resultDisplayMode !== 'merged'" class="storyboard-section">
           <div class="sb-title-row">
             <input v-model="storyboardTitle" class="sb-title-input" placeholder="分镜标题..." />
@@ -389,6 +389,20 @@
             </svg>
             添加镜头
           </button>
+        </div>
+
+        <!-- Merged mode: read-only shot summary -->
+        <div v-if="shots.length > 0 && resultDisplayMode === 'merged'" class="storyboard-section shot-summary-section">
+          <div class="vgp-section-title">镜头列表</div>
+          <div class="shot-summary-list">
+            <div v-for="(shot, i) in shots" :key="'summary-'+i" class="shot-summary-item">
+              <span class="summary-num" :class="'summary-status-' + (shot.status || 'PENDING').toLowerCase()">{{ i + 1 }}</span>
+              <div class="summary-content">
+                <p class="summary-desc">{{ shot.shotDescription }}</p>
+                <span class="summary-meta">{{ shot.cameraMovement || '固定' }} · {{ shot.duration || 5 }}s{{ shot.status === 'SUCCEEDED' ? ' · ✅ 已完成' : shot.status === 'FAILED' ? ' · ❌ 失败' : ' · ⏳ ' + (shot.status || 'PENDING') }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Phase 3: Submit settings (reuse existing advanced settings) -->
@@ -1961,6 +1975,22 @@ async function mergeVideos() {
   font-size: 12px; font-weight: 700; color: transparent; transition: color 0.2s;
 }
 .display-card.active::after { color: var(--primary); }
+/* Shot summary (merged mode read-only) */
+.shot-summary-section { opacity: 0.85; }
+.shot-summary-list { display: flex; flex-direction: column; gap: 8px; }
+.shot-summary-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 6px; background: var(--bg-secondary); }
+.summary-num {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; background: var(--bg); color: var(--text-secondary);
+}
+.summary-num.summary-status-succeeded { background: #d1fae5; color: #059669; }
+.summary-num.summary-status-failed { background: #fee2e2; color: #dc2626; }
+.summary-num.summary-status-submitted, .summary-num.summary-status-processing { background: #fef3c7; color: #d97706; }
+.summary-content { flex: 1; min-width: 0; }
+.summary-desc { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text); }
+.summary-meta { font-size: 11px; color: var(--text-secondary); }
+
 .merged-section { margin-top: 12px; }
 .btn-merged-play { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; width: 100%; justify-content: center; }
 .btn-merged-play:hover:not(:disabled) { opacity: 0.9; }
