@@ -1,12 +1,15 @@
 package com.myagent.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myagent.config.ChatClientRegistry;
 import com.myagent.mapper.VideoGenTaskMapper;
 import com.myagent.model.SubtitleEntry;
 import com.myagent.model.VideoGenRequest;
 import com.myagent.model.VideoGenTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,14 +43,18 @@ public class VideoGenService {
     private final Path storagePath;
     private final String ffmpegPath;
     private final ExecutorService downloadExecutor = Executors.newSingleThreadExecutor();
+    private final ChatClientRegistry clientRegistry;
+    private final ExecutorService titleExecutor;
 
     public VideoGenService(
             VideoGenTaskMapper taskMapper,
             @Value("${app.ark.api-key:}") String apiKey,
             @Value("${app.ark.endpoint:https://ark.cn-beijing.volces.com/api/v3}") String endpoint,
-            @Value("${app.ark.model:doubao-seedance-1-0-pro-250528}") String model,
+            @Value("${app.ark.model:doubao-seedance-1-0-pro-fast-251015}") String model,
             @Value("${app.video.storage.path:./data/videos}") String storagePath,
-            @Value("${app.video.ffmpeg.path:ffmpeg}") String ffmpegPath) {
+            @Value("${app.video.ffmpeg.path:ffmpeg}") String ffmpegPath,
+            ChatClientRegistry clientRegistry,
+            @Qualifier("titleGenerationExecutor") ExecutorService titleExecutor) {
         this.taskMapper = taskMapper;
         this.objectMapper = new ObjectMapper();
         this.httpClient = HttpClient.newBuilder()
@@ -58,6 +65,8 @@ public class VideoGenService {
         this.model = model;
         this.storagePath = Paths.get(storagePath);
         this.ffmpegPath = ffmpegPath;
+        this.clientRegistry = clientRegistry;
+        this.titleExecutor = titleExecutor;
         try {
             Files.createDirectories(this.storagePath);
         } catch (IOException e) {
@@ -74,6 +83,14 @@ public class VideoGenService {
      */
     @Transactional
     public VideoGenTask submitTask(VideoGenRequest request, String userId) {
+        return submitTask(request, userId, null);
+    }
+
+    /**
+     * Submit a video generation task with optional storyboard association.
+     */
+    @Transactional
+    public VideoGenTask submitTask(VideoGenRequest request, String userId, String storyboardId) {
         if (request.getPrompt() == null || request.getPrompt().isBlank()) {
             throw new IllegalArgumentException("提示词不能为空");
         }
@@ -84,10 +101,11 @@ public class VideoGenService {
         task.setPrompt(request.getPrompt());
         task.setReqKey(model);
         task.setConversationId(request.getConversationId());
+        task.setStoryboardId(storyboardId);
         task.setDuration(request.getDuration() != null ? request.getDuration() : 5);
-        // Seedance 1.5 pro: duration must be 4-12 seconds
+        // Seedance 1.0 pro fast: duration must be 2-12 seconds
         int duration = task.getDuration();
-        if (duration < 4) task.setDuration(4);
+        if (duration < 2) task.setDuration(2);
         if (duration > 12) task.setDuration(12);
         task.setAspectRatio(request.getAspectRatio() != null ? request.getAspectRatio() : "16:9");
         task.setSeed(request.getSeed() != null ? request.getSeed() : -1);
@@ -110,6 +128,13 @@ public class VideoGenService {
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.insert(task);
+
+        // Async: generate a human-readable title via LLM (single-shot tasks only)
+        if (storyboardId == null) {
+            final String taskId = task.getId();
+            final String taskPrompt = task.getPrompt();
+            titleExecutor.submit(() -> generateTaskTitle(taskId, taskPrompt));
+        }
 
         try {
             // Build Ark API request body
@@ -709,5 +734,33 @@ public class VideoGenService {
             return path;
         }
         return null;
+    }
+
+    /**
+     * Async: generate a short human-readable title from the video prompt via LLM.
+     */
+    private void generateTaskTitle(String taskId, String prompt) {
+        try {
+            ChatClient client = clientRegistry.getDefault();
+            String systemPrompt = "你是一个标题生成助手。根据用户的视频提示词，生成一个简洁的中文标题（不超过15个字）。只输出标题，不要任何额外文字或标点。";
+            String title = client.prompt()
+                    .system(systemPrompt)
+                    .user(prompt)
+                    .call()
+                    .content();
+            if (title != null && !title.isBlank()) {
+                title = title.trim().replaceAll("[\"「」『』\"']", "");
+                if (title.length() > 20) title = title.substring(0, 20);
+                VideoGenTask task = taskMapper.selectById(taskId);
+                if (task != null) {
+                    task.setTitle(title);
+                    task.setUpdatedAt(LocalDateTime.now());
+                    taskMapper.updateById(task);
+                    log.info("Title generated for task {}: {}", taskId, title);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Title generation failed for task {}: {}", taskId, e.getMessage());
+        }
     }
 }

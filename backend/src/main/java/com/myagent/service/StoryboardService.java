@@ -35,7 +35,7 @@ public class StoryboardService {
 
             1. shotDescription（画面描述）：详细描述画面内容、光线、色调、构图、主体动作（中文，50-150字）
             2. cameraMovement（运镜方式）：推镜 / 拉镜 / 摇镜 / 跟镜 / 固定 / 升降
-            3. duration（时长建议）：4~12 秒之间的整数
+            3. duration（时长建议）：2~12 秒之间的整数
             4. sceneNote（场景备注）：简短的场景标识（5-10字）
             5. audioHint（音效提示）：该镜头的音效或配乐建议
 
@@ -149,7 +149,7 @@ public class StoryboardService {
                 Object durationObj = rawShot.get("duration");
                 if (durationObj instanceof Number) {
                     int duration = ((Number) durationObj).intValue();
-                    if (duration < 4) duration = 4;
+                    if (duration < 2) duration = 2;
                     if (duration > 12) duration = 12;
                     shot.setDuration(duration);
                 } else {
@@ -351,7 +351,7 @@ public class StoryboardService {
         for (StoryboardShot shot : pendingShots) {
             try {
                 VideoGenRequest request = buildVideoGenRequest(shot, commonParams, storyboard.getConversationId());
-                VideoGenTask task = videoGenService.submitTask(request, userId);
+                VideoGenTask task = videoGenService.submitTask(request, userId, storyboardId);
 
                 shot.setTaskId(task.getId());
                 shot.setStatus("SUBMITTED");
@@ -441,10 +441,25 @@ public class StoryboardService {
                 Map.of("storyboard_id", storyboardId));
         shots.sort(Comparator.comparingInt(s -> s.getSortOrder() != null ? s.getSortOrder() : 0));
 
-        // Filter to only SUCCEEDED shots with a task_id
-        List<StoryboardShot> succeeded = shots.stream()
-                .filter(s -> "SUCCEEDED".equals(s.getStatus()) && s.getTaskId() != null)
-                .toList();
+        // Filter to only shots whose task has actually succeeded
+        // (The shot.status in DB may be stale — always check the real VideoGenTask status)
+        List<StoryboardShot> succeeded = new ArrayList<>();
+        for (StoryboardShot shot : shots) {
+            if (shot.getTaskId() == null) continue;
+            if ("SUCCEEDED".equals(shot.getStatus())) {
+                succeeded.add(shot);
+                continue;
+            }
+            // Fallback: check actual task status in case shot.status was never synced from frontend
+            VideoGenTask task = videoGenTaskMapper.selectById(shot.getTaskId());
+            if (task != null && "SUCCEEDED".equals(task.getStatus()) && task.getVideoPath() != null) {
+                // Sync shot status to DB so subsequent queries are accurate
+                shot.setStatus("SUCCEEDED");
+                shot.setUpdatedAt(LocalDateTime.now());
+                storyboardShotMapper.updateById(shot);
+                succeeded.add(shot);
+            }
+        }
 
         if (succeeded.isEmpty()) {
             throw new IllegalArgumentException("没有已完成的镜头可合并");

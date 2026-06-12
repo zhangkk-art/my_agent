@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS video_gen_tasks (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
     conversation_id VARCHAR(36),
+    storyboard_id VARCHAR(36) NULL DEFAULT NULL,
+    title VARCHAR(200) NULL DEFAULT NULL,
     prompt TEXT NOT NULL,
     req_key VARCHAR(64) NOT NULL DEFAULT 'jimeng_ti2v_v30_pro',
     duration INT DEFAULT 5,
@@ -71,7 +73,8 @@ CREATE TABLE IF NOT EXISTS video_gen_tasks (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_vgt_user_id (user_id),
-    INDEX idx_vgt_status (status)
+    INDEX idx_vgt_status (status),
+    INDEX idx_vgt_storyboard_id (storyboard_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS video_prompt_templates (

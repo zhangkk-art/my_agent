@@ -12,6 +12,8 @@ public class VideoGenTask {
     private String id;
     private String userId;
     private String conversationId;
+    private String storyboardId;
+    private String title;
     private String prompt;
     private String reqKey;
     private Integer duration;
@@ -42,6 +44,12 @@ public class VideoGenTask {
 
     public String getConversationId() { return conversationId; }
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+
+    public String getStoryboardId() { return storyboardId; }
+    public void setStoryboardId(String storyboardId) { this.storyboardId = storyboardId; }
+
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
 
     public String getPrompt() { return prompt; }
     public void setPrompt(String prompt) { this.prompt = prompt; }

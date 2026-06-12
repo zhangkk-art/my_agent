@@ -105,6 +105,10 @@ public class SchemaMigration implements ApplicationRunner {
                 "ALTER TABLE video_gen_tasks ADD COLUMN custom_subtitles TEXT NULL DEFAULT NULL");
         addColumnIfMissing("video_gen_tasks", "negative_prompt",
                 "ALTER TABLE video_gen_tasks ADD COLUMN negative_prompt TEXT NULL DEFAULT NULL");
+        addColumnIfMissing("video_gen_tasks", "storyboard_id",
+                "ALTER TABLE video_gen_tasks ADD COLUMN storyboard_id VARCHAR(36) NULL DEFAULT NULL");
+        addColumnIfMissing("video_gen_tasks", "title",
+                "ALTER TABLE video_gen_tasks ADD COLUMN title VARCHAR(200) NULL DEFAULT NULL");
 
         // ── Video prompt templates table ──
         jdbcTemplate.execute(
