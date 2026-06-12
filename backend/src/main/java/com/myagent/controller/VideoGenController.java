@@ -2,8 +2,10 @@ package com.myagent.controller;
 
 import com.myagent.model.VideoGenRequest;
 import com.myagent.model.VideoGenTask;
+import com.myagent.model.VideoPromptTemplate;
 import com.myagent.security.UserPrincipal;
 import com.myagent.service.VideoGenService;
+import com.myagent.service.VideoPromptService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.FileSystemResource;
@@ -27,9 +29,11 @@ public class VideoGenController {
     private static final Logger log = LoggerFactory.getLogger(VideoGenController.class);
 
     private final VideoGenService videoGenService;
+    private final VideoPromptService promptService;
 
-    public VideoGenController(VideoGenService videoGenService) {
+    public VideoGenController(VideoGenService videoGenService, VideoPromptService promptService) {
         this.videoGenService = videoGenService;
+        this.promptService = promptService;
     }
 
     /**
@@ -183,5 +187,93 @@ public class VideoGenController {
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status() {
         return ResponseEntity.ok(Map.of("configured", videoGenService.isConfigured()));
+    }
+
+    // ── Prompt Engineering endpoints ──
+
+    @PostMapping("/prompt/enhance")
+    public ResponseEntity<?> enhancePrompt(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody Map<String, String> body) {
+        try {
+            String prompt = body.get("prompt");
+            if (prompt == null || prompt.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "提示词不能为空"));
+            }
+            VideoPromptService.EnhanceResult result = promptService.enhance(prompt);
+            Map<String, Object> resp = new java.util.LinkedHashMap<>();
+            resp.put("enhanced", result.enhanced());
+            if (result.suggestedNegative() != null) {
+                resp.put("suggestedNegative", result.suggestedNegative());
+            }
+            return ResponseEntity.ok(resp);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Prompt enhancement failed", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "增强失败: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/prompt/translate")
+    public ResponseEntity<?> translatePrompt(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody Map<String, String> body) {
+        try {
+            String prompt = body.get("prompt");
+            String target = body.get("target");
+            if (prompt == null || prompt.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "提示词不能为空"));
+            }
+            String translated = promptService.translate(prompt, target);
+            return ResponseEntity.ok(Map.of("translated", translated));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Prompt translation failed", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "翻译失败: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/prompt/templates")
+    public ResponseEntity<List<VideoPromptTemplate>> getPromptTemplates(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(promptService.getTemplates());
+    }
+
+    @PostMapping("/prompt/templates")
+    public ResponseEntity<?> createPromptTemplate(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody Map<String, String> body) {
+        try {
+            String name = body.get("name");
+            String content = body.get("content");
+            String category = body.get("category");
+            if (name == null || name.isBlank() || content == null || content.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "名称和内容不能为空"));
+            }
+            VideoPromptTemplate t = promptService.createTemplate(name, content, category);
+            return ResponseEntity.ok(t);
+        } catch (Exception e) {
+            log.error("Failed to create video prompt template", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "创建失败: " + e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/prompt/templates/{id}")
+    public ResponseEntity<?> deletePromptTemplate(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String id) {
+        try {
+            promptService.deleteTemplate(id);
+            return ResponseEntity.noContent().build();
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Failed to delete video prompt template", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "删除失败: " + e.getMessage()));
+        }
     }
 }
