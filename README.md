@@ -1,6 +1,6 @@
 # Ayer — AI Chat Application
 
-全栈 AI 对话应用，Spring Boot + Vue 3 + 多模型（DeepSeek / Qwen），支持流式对话、联网搜索、图片分析、知识库检索等功能。
+全栈 AI 对话应用，Spring Boot + Vue 3 + 多模型（DeepSeek / Qwen），支持流式对话、联网搜索、图片分析、AI 视频生成、分镜编排、知识库检索等功能。
 
 ## 技术栈
 
@@ -19,6 +19,8 @@
 | HTML 净化 | DOMPurify | ^3 |
 | 知识库 | Elasticsearch | 8.x |
 | 文档解析 | Apache Tika | 2.9 |
+| AI 视频生成 | 即梦 AI (Seedance) via 火山方舟 Ark API | — |
+| 视频处理 | FFmpeg (字幕烧录、音频合成、多段拼接) | — |
 
 ## 功能一览
 
@@ -59,6 +61,24 @@
 - **提示词模板** — 保存常用系统提示词，会话时快速应用
 - **对话模板（Workflow）** — 预设系统提示词 + 初始消息，欢迎页一键启动
 
+### AI 视频生成 🆕
+- **文生视频** — 通过即梦 AI (Seedance) 生成 MP4 视频，支持自定义时长、比例、随机种子
+- **首帧图引导** — 上传参考图片作为视频首帧
+- **提示词增强** — AI 自动优化视频提示词，支持中英互译
+- **视频提示词模板** — 保存常用视频生成参数模板
+- **字幕烧录** — 生成后可选烧录 SRT 字幕到视频
+- **TTS 旁白** — 可选 AI 语音合成并合成到视频音轨
+- **负向提示词** — 排除不希望出现的画面元素
+- **异步任务** — 提交后轮询状态，完成后在线播放/下载
+
+### 分镜编排（Storyboard）🆕
+- **LLM 自动生成分镜脚本** — 输入创意主题，AI 生成多镜头分镜（含场景描述、运镜、时长、音效提示）
+- **逐镜生成视频** — 每个镜头单独提交视频生成，可单独查看/重试
+- **批量提交** — 一键提交所有待处理镜头
+- **FFmpeg 合并** — 将多个已生成镜头的视频片段用 xfade 转场拼接为完整视频
+- **分镜编辑** — 手动调整镜头顺序、描述、运镜指令
+- **合并模式预览** — 只读摘要视图快速浏览全部分镜
+
 ### 知识库（RAG）
 - 上传 PDF / Word / TXT / Markdown 等文档
 - 自动解析、分块、向量化存入 Elasticsearch
@@ -80,6 +100,8 @@
 - Node.js 18+
 - MySQL 8.0+
 - Redis 7.x（可选，无 Redis 时自动降级到直查数据库）
+- FFmpeg（视频处理功能需要，路径在 `application.yml` 中配置）
+- Elasticsearch 8.x（知识库功能需要）
 
 ### 1. 克隆仓库
 
@@ -104,6 +126,13 @@ export MYSQL_PASSWORD=your_password
 
 # 联网搜索 - BochaAI（可选，https://open.bochaai.com）
 export WEB_SEARCH_API_KEY=sk-your-key
+
+# 视频生成 - 火山方舟 Ark API（可选，https://www.volcengine.com）
+export ARK_API_KEY=your-ark-api-key
+export ARK_VIDEO_MODEL=doubao-seedance-1-0-pro-fast-251015
+
+# JWT 密钥（生产环境务必修改）
+export JWT_SECRET=your-secret-key
 ```
 
 ### 3. 启动后端
@@ -147,6 +176,7 @@ my_agent/
 │       │   ├── config/
 │       │   │   ├── WebConfig.java              # CORS（允许 GET/POST/PUT/DELETE/PATCH）
 │       │   │   ├── ChatClientRegistry.java     # DeepSeek / Qwen 客户端注册
+│       │   │   ├── RedisConfig.java            # Redis 配置及降级处理
 │       │   │   └── SchemaMigration.java        # 启动时自动补齐增量字段和索引
 │       │   ├── controller/
 │       │   │   ├── ChatController.java         # 流式对话（stream / image / regenerate）
@@ -155,18 +185,27 @@ my_agent/
 │       │   │   ├── DailyQuestionController.java# 今日推荐问题（AI 生成 + 内存缓存）
 │       │   │   ├── PromptTemplateController.java
 │       │   │   ├── WorkflowTemplateController.java
-│       │   │   └── SharePageController.java
+│       │   │   ├── AuthController.java         # 登录 / 注册
+│       │   │   ├── SharePageController.java
+│       │   │   ├── VideoGenController.java     # 视频生成（提交、轮询、播放、后期处理）
+│       │   │   └── StoryboardController.java   # 分镜编排（生成、保存、提交、合并）
 │       │   ├── service/
 │       │   │   ├── ChatService.java            # AI 对话核心（多模型、工具调用、参数）
 │       │   │   ├── ConversationService.java    # 会话生命周期管理
+│       │   │   ├── UserService.java            # 用户认证
 │       │   │   ├── PromptTemplateService.java
-│       │   │   └── WorkflowTemplateService.java
-│       │   ├── model/                          # 数据实体
+│       │   │   ├── WorkflowTemplateService.java
+│       │   │   ├── VideoGenService.java        # 视频生成（Ark API 调用、下载、FFmpeg 处理）
+│       │   │   ├── VideoPromptService.java     # 视频提示词增强和翻译
+│       │   │   └── StoryboardService.java      # 分镜生成、视频合并
+│       │   ├── model/                          # 数据实体（Conversation, Message, User, VideoGenTask, Storyboard, StoryboardShot 等）
 │       │   ├── mapper/                         # MyBatis-Plus Mapper
+│       │   ├── security/                       # JWT 认证（JwtUtil, JwtAuthFilter, SecurityConfig）
 │       │   ├── tool/
 │       │   │   ├── ToolFunctions.java          # 时间 / 天气预注入
 │       │   │   └── WebSearchTools.java         # BochaAI 联网搜索
-│       │   └── rag/                            # 知识库模块（ES + Tika）
+│       │   ├── rag/                            # 知识库模块（ES + Tika）
+│       │   └── util/                           # 工具类（IamV4Signer 等）
 │       └── resources/
 │           ├── application.yml
 │           ├── schema.sql
@@ -188,6 +227,8 @@ my_agent/
             ├── LoginView.vue                   # 登录/注册页
             ├── SharedView.vue                  # 分享对话只读视图
             ├── ShortcutsModal.vue              # 键盘快捷键帮助弹窗
+            ├── VideoGenPanel.vue               # 视频生成面板（提示词编辑、参数、轮询预览）
+            ├── VideoPlayerModal.vue            # 视频播放器弹窗
             └── Toast.vue                       # 全局通知
 ```
 
@@ -197,11 +238,16 @@ my_agent/
 |---|---------|
 | `conversations` | id · title · system_prompt · share_token · pinned · folder_name · user_id · created_at · updated_at |
 | `messages` | id · conversation_id · role · content · reasoning · prompt_tokens · completion_tokens · total_tokens · starred · rating · interrupted · created_at（索引：`idx_msg_conv (conversation_id, created_at)`）|
+| `users` | id · username · password_hash · created_at |
 | `prompt_templates` | id · name · content · sort_order |
 | `workflow_templates` | id · name · description · system_prompt · initial_message |
 | `knowledge_documents` | id · name · content_type · chunk_count |
+| `video_gen_tasks` | id · user_id · conversation_id · storyboard_id · title · prompt · req_key · duration · aspect_ratio · seed · first_frame_url · task_id · status · video_path · subtitle_enabled · subtitle_path · generate_audio · narrate_subtitles · custom_subtitles · negative_prompt · error_message · created_at · updated_at |
+| `storyboards` | id · user_id · conversation_id · title · idea · shot_count · created_at · updated_at |
+| `storyboard_shots` | id · storyboard_id · scene_number · scene_note · shot_description · camera_movement · duration · audio_hint · sort_order · status · task_id · created_at · updated_at |
+| `video_prompt_templates` | id · name · content · category · created_at · updated_at |
 
-所有表由 `schema.sql` 初始创建，增量字段（如 `user_id`、`pinned`、`starred`、`interrupted` 等）由 `SchemaMigration` 在每次启动时自动补齐，**无需手动执行任何迁移脚本**。
+所有表由 `schema.sql` 初始创建，增量字段（如 `user_id`、`pinned`、`starred`、`interrupted`、`storyboard_id`、`negative_prompt` 等）由 `SchemaMigration` 在每次启动时自动补齐，**无需手动执行任何迁移脚本**。
 
 ## API 接口
 
@@ -252,6 +298,38 @@ my_agent/
 | GET | `/api/messages/search?q=` | 全文搜索 |
 | GET | `/api/messages/starred` | 获取所有收藏消息 |
 
+### 视频生成
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/video-gen/submit` | 提交视频生成任务 |
+| GET | `/api/video-gen/tasks` | 获取当前用户所有任务 |
+| GET | `/api/video-gen/tasks/{id}` | 获取单个任务（含自动轮询 Jimeng 状态）|
+| DELETE | `/api/video-gen/tasks/{id}` | 删除任务及本地视频文件 |
+| PATCH | `/api/video-gen/tasks/{id}/conversation` | 更新关联的会话 ID |
+| GET | `/api/video-gen/tasks/{id}/video` | 流式播放生成的视频 |
+| POST | `/api/video-gen/tasks/{id}/post-process` | 后期处理（烧录字幕 / TTS 旁白）|
+| POST | `/api/video-gen/prompt/enhance` | AI 增强视频提示词 |
+| POST | `/api/video-gen/prompt/translate` | 提示词翻译（中英互译）|
+| GET | `/api/video-gen/prompt/templates` | 获取视频提示词模板 |
+| POST | `/api/video-gen/prompt/templates` | 创建视频提示词模板 |
+| DELETE | `/api/video-gen/prompt/templates/{id}` | 删除视频提示词模板 |
+
+### 分镜编排
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/video-gen/storyboard/generate` | LLM 生成分镜脚本 |
+| POST | `/api/video-gen/storyboard` | 保存分镜及全部镜头 |
+| GET | `/api/video-gen/storyboard/{id}` | 获取分镜详情（含全部镜头）|
+| PUT | `/api/video-gen/storyboard/{id}` | 更新分镜标题及镜头内容 |
+| DELETE | `/api/video-gen/storyboard/{id}` | 删除分镜 |
+| GET | `/api/video-gen/storyboards?conversationId=` | 获取会话的所有分镜 |
+| POST | `/api/video-gen/storyboard/{id}/submit` | 批量提交所有待处理镜头 |
+| POST | `/api/video-gen/storyboard/{id}/shots/{shotId}/submit` | 提交单个镜头 |
+| POST | `/api/video-gen/storyboard/{id}/merge` | FFmpeg xfade 合并所有已生成镜头 |
+| GET | `/api/video-gen/storyboard/{id}/merged-video` | 流式播放合并后的视频 |
+
 ### 其他
 
 | 方法 | 路径 | 说明 |
@@ -278,8 +356,6 @@ spring:
       api-key: ${DEEPSEEK_API_KEY}
       base-url: https://api.deepseek.com
       chat.options.model: deepseek-chat
-
-spring:
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -298,6 +374,19 @@ app:
   websearch:
     api-key: ${WEB_SEARCH_API_KEY}
     endpoint: https://api.bochaai.com/v1/web-search
+  # 视频生成 - 火山方舟 Ark API（即梦 AI / Seedance）
+  ark:
+    api-key: ${ARK_API_KEY}
+    endpoint: https://ark.cn-beijing.volces.com/api/v3
+    model: ${ARK_VIDEO_MODEL:doubao-seedance-1-0-pro-fast-251015}
+  video:
+    storage:
+      path: ${VIDEO_STORAGE_PATH:./data/videos}
+    ffmpeg:
+      path: D:/install/ffmpeg/ffmpeg-8.1.1-full_build/bin/ffmpeg.exe
+  elasticsearch:
+    host: ${ES_HOST:localhost}
+    port: ${ES_PORT:9201}
 ```
 
 ### 缓存说明
@@ -321,6 +410,12 @@ Redis 用于缓存每日推荐问题、提示词模板、Workflow 模板、知�
 **全文搜索取消**：侧边栏搜索框每次输入变化时，前一个尚未返回的请求会被 `AbortController` 立即取消，避免乱序结果覆盖最新查询，同时减少不必要的后端压力。
 
 **多模型架构**：`ChatClientRegistry` 启动时注册 DeepSeek 和 Qwen 两个 `ChatClient`，`ChatService` 根据请求的 `model` 字段动态选择，共享同一套流式处理逻辑。
+
+**视频生成**：用户提交视频生成请求后，后端调用火山方舟 Ark API（即梦 AI Seedance 模型）提交异步任务，返回 `taskId`。前端周期性轮询 `/api/video-gen/tasks/{id}`，后端自动向 Ark 查询并更新任务状态。生成完成后下载视频到本地存储，前端通过 `/api/video-gen/tasks/{id}/video` 流式播放。
+
+**视频后期处理**：生成完成后可调用 `post-process` 接口进行字幕烧录（SRT 格式）和 TTS 旁白合成，由 FFmpeg 完成实际的视频编辑。
+
+**分镜编排**：用户输入创意主题，LLM 生成结构化的分镜脚本（场景描述、运镜指令、时长、音效提示等 JSON）。每个镜头独立提交视频生成，最终通过 FFmpeg xfade 滤镜将所有镜头拼接为完整视频，实现从创意到成片的一站式工作流。
 
 ## License
 
